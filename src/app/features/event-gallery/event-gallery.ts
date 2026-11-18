@@ -2,6 +2,9 @@ import { Component, OnInit, OnDestroy, signal, computed, effect, ChangeDetection
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { GoogleDriveGalleryService, GalleryPhoto, GallerySession } from './services/google-drive-gallery.service';
+import { SeasonalCampaignConfig, SeasonalCampaignService } from './services/seasonal-campaign.service';
+import { MensDayGreetingCard } from './components/mens-day-greeting-card/mens-day-greeting-card';
+import { MensDayPhotoTree, TreeFocusRequest } from './components/mens-day-photo-tree/mens-day-photo-tree';
 
 /** Wrapper cho windowing - giữ index gốc để opacity toggle đúng */
 export interface MasonryPhotoItem {
@@ -16,7 +19,7 @@ export interface VisiblePhoto {
 
 @Component({
   selector: 'app-event-gallery',
-  imports: [CommonModule],
+  imports: [CommonModule, MensDayGreetingCard, MensDayPhotoTree],
   templateUrl: './event-gallery.html',
   styleUrl: './event-gallery.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -40,9 +43,16 @@ export class EventGallery implements OnInit, OnDestroy {
   lightboxIndex = signal<number>(0);
   errorMessage = signal<string | null>(null);
   galleryStatus = signal<'PENDING' | 'READY'>('PENDING');
-  viewMode = signal<'slideshow' | 'grid'>('slideshow');
+  viewMode = signal<'tree' | 'slideshow' | 'grid'>('slideshow');
   eventViewMode = signal<'masonry' | 'feed'>('masonry');
   loadedImages = signal<Set<string>>(new Set());
+
+  // ===== SEASONAL CAMPAIGN (INTERNATIONAL MEN'S DAY 19/11) =====
+  activeSeasonalCampaign = signal<SeasonalCampaignConfig | null>(null);
+  isMensDayActive = computed(() => Boolean(this.activeSeasonalCampaign()));
+  showMensDayCard = signal<boolean>(false);
+  treeFocusRequest = signal<TreeFocusRequest | null>(null);
+  private treeFocusSeq = 0;
 
   // ===== ZIP & DOWNLOAD SIGNALS =====
   isZippingAll = signal<boolean>(false);
@@ -161,6 +171,14 @@ export class EventGallery implements OnInit, OnDestroy {
     { mediaId: 'demo4', name: 'Chân dung cặp đôi', kind: 'image', thumbnailUrl: 'photos/photo4.png', mediaUrl: 'photos/photo4.png', lightboxUrl: 'photos/photo4.png', downloadUrl: 'photos/photo4.png', createdTime: new Date().toISOString() },
   ];
 
+  private demoSessionPhotos: GalleryPhoto[] = [
+    { mediaId: 'demo_ses_final', name: 'Dải ảnh in kỷ niệm 19/11', kind: 'image', role: 'final', thumbnailUrl: 'photos/photo1.png', mediaUrl: 'photos/photo1.png', lightboxUrl: 'photos/photo1.png', downloadUrl: 'photos/photo1.png', createdTime: new Date().toISOString() },
+    { mediaId: 'demo_ses_shot1', name: 'Khoảnh khắc #1', kind: 'image', role: 'shot', slotIndex: 1, thumbnailUrl: 'photos/photo2.png', mediaUrl: 'photos/photo2.png', lightboxUrl: 'photos/photo2.png', downloadUrl: 'photos/photo2.png', createdTime: new Date().toISOString() },
+    { mediaId: 'demo_ses_shot2', name: 'Khoảnh khắc #2', kind: 'image', role: 'shot', slotIndex: 2, thumbnailUrl: 'photos/photo3.png', mediaUrl: 'photos/photo3.png', lightboxUrl: 'photos/photo3.png', downloadUrl: 'photos/photo3.png', createdTime: new Date().toISOString() },
+    { mediaId: 'demo_ses_shot3', name: 'Khoảnh khắc #3', kind: 'image', role: 'shot', slotIndex: 3, thumbnailUrl: 'photos/photo4.png', mediaUrl: 'photos/photo4.png', lightboxUrl: 'photos/photo4.png', downloadUrl: 'photos/photo4.png', createdTime: new Date().toISOString() },
+    { mediaId: 'demo_ses_shot4', name: 'Khoảnh khắc #4', kind: 'image', role: 'shot', slotIndex: 4, thumbnailUrl: 'photos/event-1.png', mediaUrl: 'photos/event-1.png', lightboxUrl: 'photos/event-1.png', downloadUrl: 'photos/event-1.png', createdTime: new Date().toISOString() }
+  ];
+
   private demoSessions: GallerySession[] = [
     {
       sessionId: 'ses_demo2',
@@ -198,7 +216,8 @@ export class EventGallery implements OnInit, OnDestroy {
 
   constructor(
     private route: ActivatedRoute,
-    private driveService: GoogleDriveGalleryService
+    private driveService: GoogleDriveGalleryService,
+    private seasonalCampaignService: SeasonalCampaignService
   ) {
     // PREDICTIVE PRELOADING: chỉ preload ảnh current ± 1 (3 ảnh thay vì tất cả)
     effect(() => {
@@ -272,10 +291,27 @@ export class EventGallery implements OnInit, OnDestroy {
         const legacyQueryValue = queryParams.get('m');
         const sessionPublicId = queryParams.get('s');
         const consentParam = queryParams.get('consent') || queryParams.get('approved');
+        const themeOverride = queryParams.get('theme') || queryParams.get('campaign');
+        const forceEventMode = queryParams.get('mode') === 'event';
+        const isDemoDefaultSession = Boolean(this.eventId?.startsWith('demo')) && !forceEventMode;
+        const isSessionFlow = Boolean(sessionPublicId) || isDemoDefaultSession;
         const isConsent = consentParam === '1' || consentParam === 'true';
         this.isConsentOnly.set(isConsent);
-        this.isSessionGallery = Boolean(sessionPublicId);
-        this.isSingleSession.set(Boolean(sessionPublicId));
+        this.isSessionGallery = isSessionFlow;
+        this.isSingleSession.set(isSessionFlow);
+
+        const campaign = this.seasonalCampaignService.getActiveCampaign(themeOverride);
+        this.activeSeasonalCampaign.set(campaign);
+        if (this.isSessionGallery && campaign) {
+          this.showMensDayCard.set(true);
+          this.viewMode.set('tree');
+        } else {
+          this.showMensDayCard.set(false);
+          if (this.viewMode() === 'tree') {
+            this.viewMode.set('slideshow');
+          }
+        }
+
         this.driveService.setRouteQuery(legacyQueryValue, sessionPublicId, isConsent);
         this.loadInitialPhotos();
       });
@@ -302,11 +338,18 @@ export class EventGallery implements OnInit, OnDestroy {
 
     if (this.eventId && this.eventId.startsWith('demo')) {
       setTimeout(() => {
-        this.photos.set(this.demoPhotos);
-        this.sessions.set(this.demoSessions);
-        this.demoPhotos.forEach(p => this.knownMediaIds.add(p.mediaId));
+        if (this.isSessionGallery) {
+          this.photos.set(this.demoSessionPhotos);
+          this.sessions.set([]);
+          this.demoSessionPhotos.forEach(p => this.knownMediaIds.add(p.mediaId));
+        } else {
+          this.photos.set(this.demoPhotos);
+          this.sessions.set(this.demoSessions);
+          this.demoPhotos.forEach(p => this.knownMediaIds.add(p.mediaId));
+        }
+        this.galleryStatus.set('READY');
         this.isLoading.set(false);
-      }, 800);
+      }, 450);
       return;
     }
 
@@ -560,12 +603,88 @@ export class EventGallery implements OnInit, OnDestroy {
   selectPhoto(index: number) {
     this.resetMainZoom();
     this.selectedIndex.set(index);
-    this.syncScrollAnimations(index);
+    if (this.viewMode() === 'tree') {
+      this.treeFocusRequest.set({ index, seq: ++this.treeFocusSeq });
+      this.scrollThumbIntoView(index);
+    } else {
+      this.syncScrollAnimations(index);
+    }
+  }
+
+  // ===== SEASONAL 19/11 GREETING CARD & 3D PHOTO TREE HANDLERS =====
+
+  enterTreeFromCard() {
+    this.showMensDayCard.set(false);
+    this.viewMode.set('tree');
+  }
+
+  skipCardToSlideshow() {
+    this.showMensDayCard.set(false);
+    this.viewMode.set('slideshow');
+  }
+
+  reopenMensDayCard() {
+    if (!this.isMensDayActive()) return;
+    this.showMensDayCard.set(true);
+  }
+
+  onTreePhotoSelected(index: number) {
+    this.selectedIndex.set(index);
+    this.openLightbox(index);
+  }
+
+  onTreeFrontIndexChange(index: number) {
+    this.selectedIndex.set(index);
+    this.scrollThumbIntoView(index);
+  }
+
+  onTreeThumbnailClick(index: number) {
+    if (this.viewMode() === 'tree') {
+      if (this.selectedIndex() === index) {
+        this.openLightbox(index);
+      } else {
+        this.selectedIndex.set(index);
+        this.treeFocusRequest.set({ index, seq: ++this.treeFocusSeq });
+        this.scrollThumbIntoView(index);
+      }
+      return;
+    }
+    this.selectPhoto(index);
+  }
+
+  getCardPreviewPhotoUrl(): string | null {
+    const first = this.photos().find(p => !this.isVideo(p));
+    return first ? this.getTreePreviewSrc(first) : null;
+  }
+
+  readonly getTreePreviewSrc = (photo: GalleryPhoto): string => {
+    if (!photo || this.isVideo(photo)) return this.VIDEO_FALLBACK_SVG;
+    if (photo.mediaId.startsWith('demo')) return photo.mediaUrl;
+    if (photo._thumbError || photo._mainError) return this.driveService.getDownloadUrl(photo);
+    return photo.thumbnailUrl || this.getSessionPhotoSrc(photo);
+  };
+
+  readonly isVideoFn = (photo: GalleryPhoto | null | undefined): boolean => {
+    return this.isVideo(photo);
+  };
+
+  private scrollThumbIntoView(index: number) {
+    if (typeof document === 'undefined' || typeof requestAnimationFrame === 'undefined') return;
+    requestAnimationFrame(() => {
+      const strip = document.querySelector<HTMLElement>('.thumbnail-strip');
+      const thumbEl = document.querySelectorAll<HTMLElement>('.thumbnail-item')[index];
+      if (strip && thumbEl) {
+        const targetLeft = thumbEl.offsetLeft - (strip.clientWidth - thumbEl.clientWidth) / 2;
+        strip.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
+      }
+    });
   }
 
   openSessionByPhoto(photo: GalleryPhoto, index = 0) {
     this.lightboxIndex.set(index);
-    let session = photo ? this.sessions().find(s => s.sessionId === photo.sessionId || s.finalPhoto?.mediaId === photo.mediaId) : null;
+    const session = (!this.isSingleSession() && photo)
+      ? this.sessions().find(s => s.sessionId === photo.sessionId || s.finalPhoto?.mediaId === photo.mediaId)
+      : null;
     if (session) {
       this.activeSession.set(session);
       this.activeSessionMediaIndex.set(0);
