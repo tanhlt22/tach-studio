@@ -71,12 +71,11 @@
         <!-- Envelope Side & Bottom Pocket Folds -->
         <div class="td-env-pocket-left" aria-hidden="true"></div>
         <div class="td-env-pocket-right" aria-hidden="true"></div>
-        <div class="td-env-pocket-bottom">
-          <div class="td-env-pocket-copy">
-            <span class="td-pocket-overline">THƯ TRI ÂN ĐẶC BIỆT</span>
-            <h1 class="td-pocket-heading">{{ campaign().title }}</h1>
-            <p class="td-pocket-sub">{{ campaign().subtitle }}</p>
-          </div>
+        <div class="td-env-pocket-bottom" aria-hidden="true"></div>
+        <div class="td-env-pocket-copy">
+          <span class="td-pocket-overline">THƯ TRI ÂN ĐẶC BIỆT</span>
+          <h1 class="td-pocket-heading">{{ campaign().title }}</h1>
+          <p class="td-pocket-sub">{{ campaign().subtitle }}</p>
         </div>
 
         <!-- 3D Top Triangular Flap that Slowly Opens Upward -->
@@ -241,8 +240,8 @@
           </button>
         </div>
 
-        <!-- Handwritten Closing Signature -->
-        <footer class="td-signature-block">
+        <!-- Handwritten Closing Signature (Desktop left page) -->
+        <footer class="td-signature-block td-signature-block--desktop">
           <p class="td-signature-warm">Thân mến lưu giữ,</p>
           <p class="td-signature-brand">{{ campaign().signature }}</p>
         </footer>
@@ -477,6 +476,12 @@
         <p class="td-swipe-tip" *ngIf="photos().length > 1">
           Vuốt ngang ảnh hoặc chạm ảnh nhỏ bên dưới để rút từng tấm trong thư
         </p>
+
+        <!-- Handwritten Closing Signature (Mobile bottom of letter) -->
+        <footer class="td-signature-block td-signature-block--mobile">
+          <p class="td-signature-warm">Thân mến lưu giữ,</p>
+          <p class="td-signature-brand">{{ campaign().signature }}</p>
+        </footer>
       </div>
     </article>
   </div>
