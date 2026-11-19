@@ -1,14 +1,17 @@
 import { Injectable } from '@angular/core';
 
-export type SeasonalCampaignId = 'mens-day-2026' | null;
+export type SeasonalCampaignId = 'teachers-day-2026' | null;
 
 export interface SeasonalCampaignConfig {
   id: Exclude<SeasonalCampaignId, null>;
   title: string;
   subtitle: string;
   dateBadge: string;
+  salutation: string;
   greetingHeading: string;
   greetingWish: string;
+  wishes: readonly string[];
+  photoBackNote: string;
   signature: string;
   startDate: string; // YYYY-MM-DD in Asia/Ho_Chi_Minh
   endDate: string;   // YYYY-MM-DD inclusive in Asia/Ho_Chi_Minh
@@ -16,17 +19,25 @@ export interface SeasonalCampaignConfig {
 
 const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh';
 
-const MENS_DAY_2026_CONFIG: SeasonalCampaignConfig = {
-  id: 'mens-day-2026',
-  title: 'Chúc Mừng Ngày Quốc Tế Đàn Ông',
-  subtitle: "Happy International Men's Day • 19/11",
-  dateBadge: '19 • 11',
-  greetingHeading: 'Chúc Mừng Ngày Quốc Tế Đàn Ông 19/11',
+const TEACHERS_DAY_2026_CONFIG: SeasonalCampaignConfig = {
+  id: 'teachers-day-2026',
+  title: 'Tri Ân Ngày Nhà Giáo Việt Nam',
+  subtitle: "Happy Vietnamese Teachers' Day • 20/11",
+  dateBadge: '20 • 11',
+  salutation: 'Kính gửi Người Lái Đò Thầm Lặng,',
+  greetingHeading: 'Chúc Mừng Ngày Nhà Giáo Việt Nam 20/11',
   greetingWish:
-    'Chúc phái mạnh luôn rạng rỡ, tự tin, bản lĩnh và lưu giữ trọn vẹn những khoảnh khắc tuyệt vời cùng Tách Tách Photobooth!',
+    'Kính chúc Thầy Cô luôn dồi dào sức khỏe, giữ mãi ngọn lửa nhiệt huyết trên bục giảng và ngập tràn niềm vui bên những thế hệ học trò thân thương.',
+  wishes: [
+    'Kính chúc Thầy Cô luôn dồi dào sức khỏe, giữ mãi ngọn lửa nhiệt huyết trên bục giảng và ngập tràn niềm vui bên những thế hệ học trò thân thương.',
+    'Cảm ơn Thầy Cô đã kiên nhẫn dìu dắt, gieo từng hạt mầm tri thức và nâng bước chúng em chạm tới những ước mơ tươi đẹp nhất.',
+    'Nhân ngày 20/11, xin gửi tới Thầy Cô ngàn lời tri ân sâu sắc. Mong mỗi trang giáo án luôn ngập nắng ấm và mỗi nụ cười hôm nay sẽ mãi vẹn nguyên trong khung hình kỷ niệm.',
+    'Dẫu mai này đi khắp muôn phương, lời dạy ân cần của Thầy Cô vẫn luôn là ánh sáng soi đường. Chúc Thầy Cô một mùa hiến chương thật bình an và rạng rỡ!'
+  ],
+  photoBackNote: 'Lưu giữ nụ cười rạng rỡ và những khoảnh khắc tri ân ấm áp ngày 20/11 cùng Thầy Cô & bạn bè.',
   signature: 'Tách Tách Photobooth • Nơi lưu trữ kỉ niệm',
-  startDate: '2026-11-18',
-  endDate: '2026-11-20'
+  startDate: '2026-11-20',
+  endDate: '2026-11-22'
 };
 
 interface TemporalPlainDateLike {
@@ -47,29 +58,34 @@ interface TemporalApiLike {
   providedIn: 'root'
 })
 export class SeasonalCampaignService {
-  readonly mensDayConfig = MENS_DAY_2026_CONFIG;
+  readonly teachersDayConfig = TEACHERS_DAY_2026_CONFIG;
 
   /**
-   * Determines whether the International Men's Day (19/11/2026) special
-   * single-session 3D greeting card & photo tree experience is active.
+   * Determines whether the Vietnamese Teachers' Day (20/11/2026) special
+   * fullscreen keepsake envelope & tribute letter experience is active.
    *
-   * Evaluates the wall-clock calendar date in Asia/Ho_Chi_Minh (GMT+7) so that
-   * once the campaign window ends (2026-11-21 00:00 GMT+7), the gallery
-   * automatically reverts to its normal layout.
+   * Evaluates the calendar date in Asia/Ho_Chi_Minh (GMT+7) so that once the
+   * campaign window ends (2026-11-23 00:00 GMT+7), the gallery automatically
+   * reverts to its normal layout.
    */
-  isMensDayActive(themeOverride?: string | null): boolean {
+  isTeachersDayActive(themeOverride?: string | null): boolean {
     const normalized = themeOverride?.trim().toLowerCase();
     if (normalized === 'normal' || normalized === 'off' || normalized === 'default') {
       return false;
     }
-    if (normalized === 'mensday' || normalized === '19-11' || normalized === '1911') {
+    if (
+      normalized === 'teachersday' ||
+      normalized === 'teachers-day' ||
+      normalized === '20-11' ||
+      normalized === '2011'
+    ) {
       return true;
     }
-    return this.isWithinDateWindow(MENS_DAY_2026_CONFIG.startDate, MENS_DAY_2026_CONFIG.endDate);
+    return this.isWithinDateWindow(TEACHERS_DAY_2026_CONFIG.startDate, TEACHERS_DAY_2026_CONFIG.endDate);
   }
 
   getActiveCampaign(themeOverride?: string | null): SeasonalCampaignConfig | null {
-    return this.isMensDayActive(themeOverride) ? MENS_DAY_2026_CONFIG : null;
+    return this.isTeachersDayActive(themeOverride) ? TEACHERS_DAY_2026_CONFIG : null;
   }
 
   getCurrentVietnamDateIso(): string {

@@ -1,40 +1,11 @@
 <!-- Gallery Page - Mobile First Design -->
-<div class="gallery-page" [class.gallery-page--mensday]="isSingleSession() && isMensDayActive()" *ngIf="!isLoading()">
+<div class="gallery-page" *ngIf="!isLoading()">
 
   <!-- ============================================================== -->
   <!-- CASE 1: LUỒNG XEM PHIÊN RIÊNG (SESSION FLOW - khi quét QR sau chụp) -->
   <!-- ============================================================== -->
   <ng-container *ngIf="isSingleSession()">
-    <!-- 3D AUTO-OPENING GREETING CARD OVERLAY (Chỉ hiện trong dịp 19/11) -->
-    <app-mens-day-greeting-card
-      *ngIf="isMensDayActive() && showMensDayCard() && !isSessionTimedOut() && !errorMessage() && activeSeasonalCampaign() as campaign"
-      [campaign]="campaign"
-      [photoCount]="photoCount()"
-      [isPolling]="isPolling()"
-      [previewPhotoUrl]="getCardPreviewPhotoUrl()"
-      (enterTree)="enterTreeFromCard()">
-    </app-mens-day-greeting-card>
-
-    <!-- TOP CELEBRATION BANNER WITH FLOATING BALLOONS (#329DD2 + #F8FAFC + #EB2F33) -->
-    <div class="mensday-top-greeting" *ngIf="isMensDayActive() && activeSeasonalCampaign() as campaign">
-      <div class="top-balloons" aria-hidden="true">
-        <span class="tb tb--blue"></span>
-        <span class="tb tb--red"></span>
-        <span class="tb tb--white"></span>
-        <span class="tb tb--blue tb--right-1"></span>
-        <span class="tb tb--red tb--right-2"></span>
-      </div>
-      <div class="top-greeting-inner">
-        <span class="top-greeting-pill">
-          <span class="top-pill-dot" aria-hidden="true"></span>
-          19/11 • HAPPY MEN'S DAY
-        </span>
-        <h2 class="top-greeting-title">{{ campaign.greetingHeading }}</h2>
-        <p class="top-greeting-sub">{{ campaign.greetingWish }}</p>
-      </div>
-    </div>
-
-    <!-- Header: Đếm ảnh & Toggle chế độ xem Cây 3D / Slideshow / Grid -->
+    <!-- Header: Đếm ảnh & Toggle chế độ xem Thư 20/11 / Slideshow / Grid -->
     <div class="gallery-header">
       <div class="header-meta">
         <span class="meta-badge">
@@ -61,10 +32,10 @@
           Chưa đủ bộ (Bấm tải thêm)
         </button>
 
-        <!-- Nút mở lại thiệp chúc mừng 19/11 -->
-        <button type="button" class="header-card-replay-btn" *ngIf="isMensDayActive()" (click)="reopenMensDayCard()" title="Mở lại thiệp chúc mừng 19/11">
+        <!-- Nút mở lại thiệp tri ân 20/11 -->
+        <button type="button" class="header-card-replay-btn" *ngIf="isTeachersDayActive() && photoCount() > 0" (click)="replayTeachersDayLetter()" title="Mở lại phong thư tri ân 20/11">
           <span aria-hidden="true">💌</span>
-          <span>Thiệp 19/11</span>
+          <span>Thiệp 20/11</span>
         </button>
 
         <!-- Nút làm mới nhanh cho phiên chụp -->
@@ -78,15 +49,15 @@
         <!-- View Mode Toggle Group -->
         <div class="toggle-mode-group" *ngIf="photoCount() > 0">
           <button
-            class="toggle-btn toggle-btn--tree"
-            *ngIf="isMensDayActive()"
-            [class.toggle-btn--active]="viewMode() === 'tree'"
-            (click)="viewMode.set('tree')"
-            title="Xem trên Cây Ảnh 3D 19/11"
-            aria-label="Xem trên Cây Ảnh 3D">
+            class="toggle-btn toggle-btn--letter"
+            *ngIf="isTeachersDayActive()"
+            [class.toggle-btn--active]="viewMode() === 'letter'"
+            (click)="viewMode.set('letter')"
+            title="Xem trong Bức Thư Tri Ân 20/11"
+            aria-label="Xem trong Bức Thư Tri Ân 20/11">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="toggle-icon">
-              <path d="M12 3L5 11h4l-3 6h12l-3-6h4z" />
-              <path d="M12 17v4" />
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <polyline points="3 7 12 13 21 7" />
             </svg>
           </button>
           <button class="toggle-btn" [class.toggle-btn--active]="viewMode() === 'slideshow'" (click)="viewMode.set('slideshow')" title="Xem trình chiếu">
@@ -108,17 +79,22 @@
       </div>
     </div>
 
-    <!-- 3D INTERACTIVE PHOTO TREE VIEWER (Dịp 19/11) -->
-    <app-mens-day-photo-tree
-      *ngIf="isMensDayActive() && photoCount() > 0 && viewMode() === 'tree'"
+    <!-- 20/11 FULLSCREEN AUTO-OPENING ENVELOPE & TRIBUTE LETTER VIEWER -->
+    <app-teachers-day-letter
+      *ngIf="isTeachersDayActive() && photoCount() > 0 && viewMode() === 'letter' && activeSeasonalCampaign() as campaign"
+      [campaign]="campaign"
       [photos]="photos()"
-      [paused]="showLightbox()"
-      [focusRequest]="treeFocusRequest()"
-      [getPhotoPreviewUrl]="getTreePreviewSrc"
+      [selectedIndex]="selectedIndex()"
+      [isPolling]="isPolling()"
+      [replayTrigger]="letterReplayTrigger()"
+      [getPhotoSrc]="getLetterPhotoSrc"
+      [getThumbSrc]="getLetterThumbSrc"
+      [getVideoSrc]="getLetterVideoSrc"
       [isVideoMedia]="isVideoFn"
-      (photoSelected)="onTreePhotoSelected($event)"
-      (frontIndexChange)="onTreeFrontIndexChange($event)">
-    </app-mens-day-photo-tree>
+      (indexChange)="onLetterIndexChange($event)"
+      (photoZoom)="onLetterPhotoZoom($event)"
+      (downloadCurrent)="downloadPhoto($event)">
+    </app-teachers-day-letter>
 
     <!-- MAIN PHOTO VIEWER (Chế độ xem trình chiếu ảnh lớn) -->
     <div class="gallery-main-photo" *ngIf="photoCount() > 0 && viewMode() === 'slideshow'"
@@ -266,12 +242,12 @@
     </div>
 
     <!-- STICKY BOTTOM BAR (Dải thumbnail & Nút tải trọn bộ) -->
-    <div class="gallery-bottom-bar" [class.gallery-bottom-bar--tree]="isMensDayActive() && viewMode() === 'tree'" *ngIf="photoCount() > 0 && (viewMode() === 'slideshow' || (isMensDayActive() && viewMode() === 'tree'))">
-      <div class="thumbnail-section" *ngIf="photoCount() > 1">
+    <div class="gallery-bottom-bar" [class.gallery-bottom-bar--seasonal]="isTeachersDayActive() && viewMode() === 'letter'" *ngIf="photoCount() > 0 && (viewMode() === 'slideshow' || (isTeachersDayActive() && viewMode() === 'letter'))">
+      <div class="thumbnail-section" *ngIf="photoCount() > 1 && viewMode() === 'slideshow'">
         <div class="thumbnail-strip">
           <div *ngFor="let photo of photos(); let i = index" class="thumbnail-item"
             [class.thumbnail-item--active]="i === selectedIndex()" [class.thumbnail-item--new]="photo.isNew"
-            (click)="onTreeThumbnailClick(i)">
+            (click)="selectPhoto(i)">
             <ng-container *ngIf="isVideo(photo); else stripImg">
               <video [src]="getVideoPreviewSrc(photo)"
                      preload="metadata"
@@ -495,7 +471,7 @@
 </div>
 
 <!-- ===== WAITING STATE (Dành riêng cho luồng phiên chụp khi vừa quét QR xong) ===== -->
-<div class="session-waiting-state" *ngIf="isSingleSession() && !isLoading() && photoCount() === 0 && !isSessionTimedOut() && !errorMessage() && !(isMensDayActive() && showMensDayCard())">
+<div class="session-waiting-state" *ngIf="isSingleSession() && !isLoading() && photoCount() === 0 && !isSessionTimedOut() && !errorMessage()">
   <div class="waiting-card">
     <div class="waiting-icon-container">
       <div class="waiting-icon-halo"></div>

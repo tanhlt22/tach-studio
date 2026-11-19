@@ -1,0 +1,483 @@
+<!-- ======================================================================= -->
+<!-- ACT 1: FULLSCREEN AUTO-OPENING 20/11 KEEPSAKE ENVELOPE / GREETING CARD  -->
+<!-- ======================================================================= -->
+<div
+  class="td-envelope-overlay"
+  *ngIf="isOverlayVisible()"
+  [class.phase-sealed]="envelopePhase() === 'sealed'"
+  [class.phase-unsealing]="envelopePhase() === 'unsealing'"
+  [class.phase-rising]="envelopePhase() === 'rising'"
+  [class.phase-fading]="envelopePhase() === 'fading'"
+  role="dialog"
+  aria-modal="true"
+  aria-label="Thiệp tri ân Ngày Nhà Giáo Việt Nam 20/11"
+  (click)="nudgeOpenEnvelope()">
+
+  <!-- Subtle skip button for immediate access -->
+  <button
+    type="button"
+    class="td-env-skip"
+    (click)="skipOpening($event)"
+    aria-label="Mở nhanh bức thư">
+    <span>Mở nhanh</span>
+    <span aria-hidden="true">→</span>
+  </button>
+
+  <!-- Fullscreen Velvet-Burgundy & Gold Foil Envelope Shell -->
+  <div class="td-env-canvas">
+    <!-- Outer double gold foil decorative frame -->
+    <div class="td-env-foil-frame" aria-hidden="true">
+      <span class="td-foil-corner td-foil-corner--tl"></span>
+      <span class="td-foil-corner td-foil-corner--tr"></span>
+      <span class="td-foil-corner td-foil-corner--bl"></span>
+      <span class="td-foil-corner td-foil-corner--br"></span>
+    </div>
+
+    <!-- Top gold emblem header -->
+    <div class="td-env-masthead">
+      <div class="td-env-brand-line">
+        <span class="td-brand-rule" aria-hidden="true"></span>
+        <span class="td-brand-kicker">TÁCH TÁCH PHOTOBOOTH</span>
+        <span class="td-brand-rule" aria-hidden="true"></span>
+      </div>
+      <p class="td-env-date-tag">20 • 11 • 2026</p>
+    </div>
+
+    <!-- Center 3D Envelope Assembly -->
+    <div class="td-env-stage">
+      <div class="td-env-body">
+        <!-- Envelope Back Inner Lining -->
+        <div class="td-env-inside" aria-hidden="true"></div>
+
+        <!-- Rising Cream Tribute Letter Sheet Inside Envelope -->
+        <div class="td-env-letter-sheet" aria-hidden="true">
+          <div class="td-env-letter-inner">
+            <span class="td-env-letter-pill">TRI ÂN NGÀY NHÀ GIÁO VIỆT NAM</span>
+            <h2 class="td-env-letter-title">{{ campaign().greetingHeading }}</h2>
+            <p class="td-env-letter-excerpt">{{ campaign().salutation }}</p>
+
+            <div class="td-env-letter-photo-peek" *ngIf="envelopePreviewPhoto() as preview">
+              <div class="td-peek-polaroid">
+                <img
+                  [src]="getThumbSrc()(preview)"
+                  [alt]="preview.name || 'Ảnh kỷ niệm 20/11'"
+                  referrerpolicy="no-referrer" />
+                <span class="td-peek-caption">20 • 11 • 2026</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Envelope Side & Bottom Pocket Folds -->
+        <div class="td-env-pocket-left" aria-hidden="true"></div>
+        <div class="td-env-pocket-right" aria-hidden="true"></div>
+        <div class="td-env-pocket-bottom">
+          <div class="td-env-pocket-copy">
+            <span class="td-pocket-overline">THƯ TRI ÂN ĐẶC BIỆT</span>
+            <h1 class="td-pocket-heading">{{ campaign().title }}</h1>
+            <p class="td-pocket-sub">{{ campaign().subtitle }}</p>
+          </div>
+        </div>
+
+        <!-- 3D Top Triangular Flap that Slowly Opens Upward -->
+        <div class="td-env-flap-hinge" aria-hidden="true">
+          <div class="td-env-flap-outer">
+            <div class="td-flap-filigree">
+              <svg viewBox="0 0 64 36" fill="none" class="td-lotus-svg">
+                <path d="M32 6C28 14 25 21 32 29C39 21 36 14 32 6Z" stroke="currentColor" stroke-width="1.4" />
+                <path d="M32 28C22 25 16 19 14 12C21 14 27 19 32 28Z" stroke="currentColor" stroke-width="1.3" />
+                <path d="M32 28C42 25 48 19 50 12C43 14 37 19 32 28Z" stroke="currentColor" stroke-width="1.3" />
+                <path d="M18 31H46" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+              </svg>
+            </div>
+          </div>
+          <div class="td-env-flap-inner"></div>
+        </div>
+
+        <!-- Embossed Burgundy & Gold Wax Seal -->
+        <div class="td-wax-seal-wrap">
+          <div class="td-seal-burst" aria-hidden="true">
+            <span class="td-spark s1"></span>
+            <span class="td-spark s2"></span>
+            <span class="td-spark s3"></span>
+            <span class="td-spark s4"></span>
+            <span class="td-spark s5"></span>
+            <span class="td-spark s6"></span>
+            <span class="td-spark s7"></span>
+            <span class="td-spark s8"></span>
+          </div>
+          <div class="td-wax-seal" aria-hidden="true">
+            <div class="td-wax-seal-ring">
+              <span class="td-wax-date">20•11</span>
+              <span class="td-wax-label">TRI ÂN</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Opening Hint -->
+    <div class="td-env-footer-hint">
+      <span class="td-hint-dot" aria-hidden="true"></span>
+      <span>
+        {{
+          envelopePhase() === 'sealed'
+            ? 'Đang mở phong thư tri ân 20/11...'
+            : envelopePhase() === 'unsealing'
+              ? 'Đang mở niêm phong gửi gắm lời chúc...'
+              : 'Mời bạn mở thư & xem kỷ niệm bên trong'
+        }}
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- ACT 2: INTERACTIVE KEEPSAKE TRIBUTE LETTER WITH PHOTOS INSIDE           -->
+<!-- ======================================================================= -->
+<section class="td-letter-stage" aria-label="Bức thư tri ân 20/11 kèm ảnh kỷ niệm">
+  <!-- Open Burgundy Envelope Folio Cradle -->
+  <div class="td-folio-cradle">
+    <!-- Subtle open envelope triangle peeking behind top of letter -->
+    <div class="td-folio-top-flap" aria-hidden="true"></div>
+
+    <!-- Cream Cotton-Paper Ruled Letter Sheet -->
+    <article class="td-letter-sheet" [class.td-letter-sheet--stamped]="tributeCount() > 0">
+      <!-- Finite Celebration Blossom Petal Drift (triggered by "Gửi hoa tri ân") -->
+      <div class="td-petal-layer" *ngIf="showPetalBurst()" aria-hidden="true">
+        <span
+          *ngFor="let petal of petals"
+          class="td-petal"
+          [class]="'td-petal td-petal--' + petal.tone"
+          [attr.data-burst]="petalBurstKey()"
+          [style.left.%]="petal.leftPct"
+          [style.width.px]="petal.sizePx"
+          [style.height.px]="petal.sizePx * 1.35"
+          [style.animation-delay.ms]="petal.delayMs"
+          [style.animation-duration.ms]="petal.durationMs"
+          [style.--petal-drift.px]="petal.driftPx">
+        </span>
+      </div>
+
+      <!-- ===== PAGE 1 (LEFT ON DESKTOP / TOP ON MOBILE): HANDWRITTEN WISH ===== -->
+      <div class="td-page td-page--message">
+        <!-- Vintage Letterhead: Postmark + Postage Stamp -->
+        <header class="td-letterhead">
+          <div class="td-postmark" aria-hidden="true">
+            <span class="td-postmark-ring">
+              <span class="td-postmark-top">TÁCH TÁCH</span>
+              <span class="td-postmark-date">20.11.2026</span>
+              <span class="td-postmark-bot">TRI ÂN</span>
+            </span>
+          </div>
+
+          <div class="td-postage-stamp" aria-hidden="true">
+            <div class="td-stamp-inner">
+              <svg viewBox="0 0 36 28" fill="none" class="td-stamp-lotus">
+                <path d="M18 4C15.2 10 13.8 15 18 21C22.2 15 20.8 10 18 4Z" stroke="currentColor" stroke-width="1.5" />
+                <path d="M18 20C11.5 18.2 7.5 14 6 9C11 10.5 15 14 18 20Z" stroke="currentColor" stroke-width="1.4" />
+                <path d="M18 20C24.5 18.2 28.5 14 30 9C25 10.5 21 14 18 20Z" stroke="currentColor" stroke-width="1.4" />
+                <path d="M9 24H27" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+              </svg>
+              <span class="td-stamp-code">20•11</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- Salutation & Title -->
+        <div class="td-letter-heading-block">
+          <p class="td-salutation">{{ campaign().salutation }}</p>
+          <h2 class="td-letter-title">{{ campaign().greetingHeading }}</h2>
+          <div class="td-gold-divider" aria-hidden="true">
+            <span class="td-divider-line"></span>
+            <span class="td-divider-diamond">✦</span>
+            <span class="td-divider-line"></span>
+          </div>
+        </div>
+
+        <!-- Ruled Parchment Wish Body -->
+        <div class="td-ruled-body">
+          <p class="td-wish-paragraph" [attr.data-wish-key]="wishTransitionKey()">
+            “{{ currentWish() }}”
+          </p>
+
+          <!-- Vintage Ink Stamp appearing when user clicks "Gửi hoa tri ân" -->
+          <div class="td-tribute-stamp" *ngIf="tributeCount() > 0" aria-live="polite">
+            <span class="td-tribute-stamp-top">ĐÃ GỬI TRI ÂN ✦ 20/11</span>
+            <span class="td-tribute-stamp-sub">
+              {{ tributeCount() > 1 ? tributeCount() + ' đóa hoa tri ân' : 'Kính tặng Thầy Cô' }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Unique Interactive Letter Controls -->
+        <div class="td-letter-actions">
+          <button
+            type="button"
+            class="td-chip-btn td-chip-btn--outline"
+            (click)="cycleWish()"
+            title="Đổi sang lời chúc 20/11 khác">
+            <span class="td-chip-icon" aria-hidden="true">✒️</span>
+            <span>Đổi lời chúc</span>
+            <span class="td-chip-count">{{ wishIndex() + 1 }}/{{ totalWishes() }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="td-chip-btn td-chip-btn--primary"
+            (click)="sendTributeFlowers()"
+            title="Gửi cánh hoa & đóng dấu tri ân lên bức thư">
+            <span class="td-chip-icon" aria-hidden="true">🌸</span>
+            <span>{{ tributeCount() > 0 ? 'Gửi thêm hoa (' + tributeCount() + ')' : 'Gửi hoa tri ân' }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="td-chip-btn td-chip-btn--ghost"
+            (click)="replayOpening()"
+            title="Xem lại hiệu ứng mở phong thư 20/11">
+            <span class="td-chip-icon" aria-hidden="true">✉️</span>
+            <span>Mở lại thư</span>
+          </button>
+        </div>
+
+        <!-- Handwritten Closing Signature -->
+        <footer class="td-signature-block">
+          <p class="td-signature-warm">Thân mến lưu giữ,</p>
+          <p class="td-signature-brand">{{ campaign().signature }}</p>
+        </footer>
+      </div>
+
+      <!-- Subtle Paper Center Fold Shadow (visible on 2-page desktop spread) -->
+      <div class="td-center-crease" aria-hidden="true"></div>
+
+      <!-- ===== PAGE 2 (RIGHT ON DESKTOP / BOTTOM ON MOBILE): PHOTOS INSIDE THE LETTER ===== -->
+      <div class="td-page td-page--photos">
+        <div class="td-photos-header">
+          <div class="td-photos-kicker">
+            <span class="td-kicker-dot" aria-hidden="true"></span>
+            <span>ẢNH KỶ NIỆM ĐÍNH KÈM TRONG THƯ</span>
+          </div>
+          <span class="td-photos-counter" *ngIf="photos().length > 0">
+            {{ safeIndex() + 1 }} / {{ photos().length }}
+          </span>
+        </div>
+
+        <!-- Mounted Polaroid Deck inside the Letter -->
+        <div
+          class="td-polaroid-deck"
+          *ngIf="currentPhoto() as active; else emptyLetterPhotos"
+          (touchstart)="onDeckTouchStart($event)"
+          (touchend)="onDeckTouchEnd($event)">
+
+          <!-- Peeking Left Polaroid (Previous Photo in Envelope) -->
+          <button
+            type="button"
+            class="td-peeking-card td-peeking-card--left"
+            *ngIf="prevPhoto() as prev"
+            (click)="showPrevPhoto($event)"
+            aria-label="Xem ảnh trước trong thư"
+            title="Chạm để rút ảnh trước lên">
+            <ng-container *ngIf="isVideoMedia()(prev); else prevImg">
+              <div class="td-peek-video-placeholder">▶ VIDEO</div>
+            </ng-container>
+            <ng-template #prevImg>
+              <img [src]="getThumbSrc()(prev)" [alt]="prev.name || 'Ảnh trước'" referrerpolicy="no-referrer" />
+            </ng-template>
+          </button>
+
+          <!-- Peeking Right Polaroid (Next Photo in Envelope) -->
+          <button
+            type="button"
+            class="td-peeking-card td-peeking-card--right"
+            *ngIf="nextPhoto() as next"
+            (click)="showNextPhoto($event)"
+            aria-label="Xem ảnh tiếp theo trong thư"
+            title="Chạm để rút ảnh tiếp theo lên">
+            <ng-container *ngIf="isVideoMedia()(next); else nextImg">
+              <div class="td-peek-video-placeholder">▶ VIDEO</div>
+            </ng-container>
+            <ng-template #nextImg>
+              <img [src]="getThumbSrc()(next)" [alt]="next.name || 'Ảnh tiếp theo'" referrerpolicy="no-referrer" />
+            </ng-template>
+          </button>
+
+          <!-- Active Mounted Polaroid with Gold Washi Tape, 4 Album Corners & 3D Flip -->
+          <div
+            class="td-polaroid-stage"
+            [class.td-polaroid-stage--next]="photoTransitionDir() === 'next'"
+            [class.td-polaroid-stage--prev]="photoTransitionDir() === 'prev'">
+
+            <!-- Translucent Gold Washi Tape pinning the photo onto the letter -->
+            <span class="td-washi-tape" aria-hidden="true"></span>
+
+            <div class="td-polaroid-flipper" [class.is-flipped]="isPhotoFlipped()">
+              <!-- FRONT FACE OF POLAROID -->
+              <div class="td-polaroid-face td-polaroid-face--front">
+                <div
+                  class="td-polaroid-photo-frame"
+                  (click)="openCurrentZoom($event)"
+                  role="button"
+                  tabindex="0"
+                  (keydown.enter)="openCurrentZoom($event)"
+                  (keydown.space)="$event.preventDefault(); openCurrentZoom($event)"
+                  [attr.aria-label]="'Phóng to ' + getPhotoLabel(active, safeIndex())">
+
+                  <!-- 4 Brushed-Gold Vintage Photo Album Corners -->
+                  <span class="td-photo-corner td-photo-corner--tl" aria-hidden="true"></span>
+                  <span class="td-photo-corner td-photo-corner--tr" aria-hidden="true"></span>
+                  <span class="td-photo-corner td-photo-corner--bl" aria-hidden="true"></span>
+                  <span class="td-photo-corner td-photo-corner--br" aria-hidden="true"></span>
+
+                  <ng-container *ngIf="isVideoMedia()(active); else activePhotoImg">
+                    <video
+                      [src]="getVideoSrc()(active)"
+                      class="td-polaroid-video"
+                      muted
+                      autoplay
+                      loop
+                      playsinline
+                      preload="metadata"
+                      [attr.aria-label]="active.name || 'Video kỷ niệm 20/11'"></video>
+                    <span class="td-media-badge">▶ VIDEO</span>
+                  </ng-container>
+
+                  <ng-template #activePhotoImg>
+                    <img
+                      [src]="getPhotoSrc()(active)"
+                      [alt]="getPhotoLabel(active, safeIndex())"
+                      class="td-polaroid-img"
+                      fetchpriority="high"
+                      referrerpolicy="no-referrer" />
+                    <span class="td-media-badge td-media-badge--hd">HD</span>
+                  </ng-template>
+
+                  <span class="td-zoom-hint">Chạm để xem toàn màn hình</span>
+                </div>
+
+                <!-- Handwritten Polaroid Bottom Caption -->
+                <div class="td-polaroid-caption">
+                  <div class="td-caption-meta">
+                    <span class="td-caption-title">{{ getPhotoLabel(active, safeIndex()) }}</span>
+                    <span class="td-caption-date">20 • 11 • 2026</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- BACK FACE OF POLAROID (3D Flip-to-Back Handwritten Keepsake Note!) -->
+              <div class="td-polaroid-face td-polaroid-face--back">
+                <div class="td-back-card-inner">
+                  <div class="td-back-stamp-row">
+                    <span class="td-back-stamp">TÁCH TÁCH • 20.11.2026</span>
+                    <span class="td-back-index">#{{ safeIndex() + 1 }}/{{ photos().length }}</span>
+                  </div>
+
+                  <p class="td-back-label">{{ getPhotoLabel(active, safeIndex()) }}</p>
+                  <p class="td-back-note">“{{ campaign().photoBackNote }}”</p>
+                  <p class="td-back-wish-mini">{{ currentWish() }}</p>
+
+                  <div class="td-back-actions">
+                    <button
+                      type="button"
+                      class="td-mini-btn td-mini-btn--outline"
+                      (click)="toggleFlipPhoto($event)">
+                      ↩ Mặt trước
+                    </button>
+                    <button
+                      type="button"
+                      class="td-mini-btn td-mini-btn--primary"
+                      (click)="requestDownloadCurrent($event)">
+                      ⬇ Tải gốc HD
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Empty / Waiting Placeholder inside the Letter -->
+        <ng-template #emptyLetterPhotos>
+          <div class="td-letter-empty-polaroid">
+            <span class="td-empty-icon" aria-hidden="true">🎞️</span>
+            <p class="td-empty-title">
+              {{ isPolling() ? 'Đang rửa ảnh kỷ niệm gửi vào thư...' : 'Chưa có ảnh trong phiên chụp này' }}
+            </p>
+            <p class="td-empty-sub">Ảnh sẽ tự động xuất hiện ngay khi máy chụp tải lên hoàn tất.</p>
+          </div>
+        </ng-template>
+
+        <!-- Tactile Deck Controls under the Mounted Photo -->
+        <div class="td-deck-toolbar" *ngIf="photos().length > 0">
+          <button
+            type="button"
+            class="td-nav-circle"
+            *ngIf="photos().length > 1"
+            (click)="showPrevPhoto($event)"
+            aria-label="Ảnh trước"
+            title="Ảnh trước">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            class="td-tool-pill"
+            (click)="toggleFlipPhoto($event)"
+            [attr.aria-pressed]="isPhotoFlipped()"
+            title="Lật mặt sau để đọc ghi chú kỷ niệm">
+            <span aria-hidden="true">{{ isPhotoFlipped() ? '🖼️' : '🔄' }}</span>
+            <span>{{ isPhotoFlipped() ? 'Xem mặt trước' : 'Lật mặt sau' }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="td-tool-pill td-tool-pill--burgundy"
+            (click)="openCurrentZoom($event)"
+            title="Phóng to ảnh chất lượng HD">
+            <span aria-hidden="true">🔍</span>
+            <span>Phóng to HD</span>
+          </button>
+
+          <button
+            type="button"
+            class="td-nav-circle"
+            *ngIf="photos().length > 1"
+            (click)="showNextPhoto($event)"
+            aria-label="Ảnh tiếp theo"
+            title="Ảnh tiếp theo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Mini Pinned Polaroid Contact Strip inside the Letter Margin -->
+        <div class="td-pinned-strip" *ngIf="photos().length > 1" aria-label="Danh sách ảnh trong bức thư">
+          <button
+            type="button"
+            *ngFor="let item of photos(); let i = index"
+            class="td-pinned-thumb"
+            [class.td-pinned-thumb--active]="i === safeIndex()"
+            [class.td-pinned-thumb--tilt-odd]="i % 2 === 1"
+            (click)="selectPhotoFromLetter(i)"
+            [attr.aria-label]="'Chọn ' + getPhotoLabel(item, i)"
+            [attr.aria-current]="i === safeIndex() ? 'true' : null">
+            <ng-container *ngIf="isVideoMedia()(item); else pinnedImg">
+              <span class="td-pinned-video-tag">▶</span>
+            </ng-container>
+            <ng-template #pinnedImg>
+              <img [src]="getThumbSrc()(item)" [alt]="item.name || 'Ảnh ' + (i + 1)" loading="lazy" referrerpolicy="no-referrer" />
+            </ng-template>
+            <span class="td-pinned-num">{{ item.role === 'final' ? 'IN' : '#' + (item.slotIndex || i) }}</span>
+          </button>
+        </div>
+
+        <p class="td-swipe-tip" *ngIf="photos().length > 1">
+          Vuốt ngang ảnh hoặc chạm ảnh nhỏ bên dưới để rút từng tấm trong thư
+        </p>
+      </div>
+    </article>
+  </div>
+</section>

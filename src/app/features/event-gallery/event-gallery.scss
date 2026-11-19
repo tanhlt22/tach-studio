@@ -490,10 +490,15 @@ $radius-sm: 10px;
   width: 100%;
   transition: max-width 0.3s;
 
-  &--tree {
+  &--seasonal {
     position: relative;
     bottom: auto;
     z-index: 10;
+    border-top: none;
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    padding-top: 6px;
   }
 
   @media (min-width: 768px) {
@@ -1231,223 +1236,22 @@ $radius-sm: 10px;
   gap: 5px;
   padding: 6px 12px;
   border-radius: 999px;
-  background: #329DD2;
-  border: 1px solid rgba(50, 157, 210, 0.35);
+  background: linear-gradient(135deg, #7e1b2e 0%, #681423 100%);
+  border: 1px solid rgba(212, 163, 115, 0.55);
   font-size: 11.5px;
   font-weight: 700;
-  color: #F8FAFC;
+  color: #faf6f0;
   cursor: pointer;
-  box-shadow: 0 3px 10px rgba(50, 157, 210, 0.24);
+  box-shadow: 0 3px 10px rgba(104, 20, 35, 0.22);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 5px 14px rgba(50, 157, 210, 0.32);
+    box-shadow: 0 5px 14px rgba(104, 20, 35, 0.3);
   }
 
   &:active {
     transform: scale(0.96);
-  }
-}
-
-// ===== 19/11 SEASONAL PALETTE (#329DD2 + #F8FAFC + #EB2F33) =====
-.gallery-page--mensday {
-  background: linear-gradient(180deg, #F8FAFC 0%, #EFF7FC 45%, #F8FAFC 100%);
-  border-radius: 24px;
-  padding-top: 6px;
-
-  .toggle-btn--active {
-    color: #329DD2;
-  }
-
-  .thumbnail-item--active {
-    border-color: #329DD2;
-    box-shadow: 0 0 0 2px rgba(50, 157, 210, 0.3), 0 8px 20px rgba(50, 157, 210, 0.22);
-  }
-
-  .gallery-bottom-bar--tree {
-    background: rgba(248, 250, 252, 0.94);
-    border-top-color: rgba(50, 157, 210, 0.18);
-  }
-
-  .download-all-section .download-all-btn--secondary {
-    background: #F8FAFC;
-    color: #196894;
-    border-color: #329DD2;
-    box-shadow: 0 4px 14px rgba(50, 157, 210, 0.14);
-
-    svg {
-      stroke: #196894;
-    }
-
-    &:hover {
-      background: #eef7fc;
-    }
-  }
-
-  .download-all-section .download-all-btn:not(.download-all-btn--secondary) {
-    background: linear-gradient(135deg, #329DD2 0%, #1d79a8 100%);
-    box-shadow: 0 6px 20px rgba(50, 157, 210, 0.32);
-
-    &:hover {
-      background: linear-gradient(135deg, #3fa9dd 0%, #2284b6 100%);
-    }
-  }
-}
-
-.mensday-top-greeting {
-  position: relative;
-  max-width: 680px;
-  margin: 4px auto 8px;
-  padding: 14px 18px;
-  border-radius: 20px;
-  overflow: hidden;
-  background: linear-gradient(135deg, #F8FAFC 0%, #e5f3fb 55%, #F8FAFC 100%);
-  border: 1px solid rgba(50, 157, 210, 0.3);
-  box-shadow: 0 10px 28px rgba(50, 157, 210, 0.12);
-  text-align: center;
-
-  @media (max-width: 639px) {
-    margin: 4px 12px 6px;
-    padding: 12px 12px;
-  }
-
-  .top-greeting-inner {
-    position: relative;
-    z-index: 2;
-  }
-
-  .top-greeting-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 10px;
-    border-radius: 999px;
-    background: rgba(50, 157, 210, 0.12);
-    color: #196894;
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: 0.12em;
-    margin-bottom: 5px;
-
-    .top-pill-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: #EB2F33;
-    }
-  }
-
-  .top-greeting-title {
-    font-family: 'Playfair Display', Georgia, serif;
-    font-size: clamp(17px, 4.4vw, 22px);
-    font-weight: 700;
-    color: #196894;
-    line-height: 1.25;
-    margin-bottom: 4px;
-  }
-
-  .top-greeting-sub {
-    font-size: 12px;
-    color: #475569;
-    line-height: 1.45;
-    max-width: 500px;
-    margin: 0 auto;
-
-    @media (max-width: 639px) {
-      font-size: 11px;
-    }
-  }
-}
-
-.top-balloons {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 1;
-  overflow: hidden;
-
-  .tb {
-    position: absolute;
-    bottom: -36px;
-    width: 20px;
-    height: 25px;
-    border-radius: 50% 50% 48% 48%;
-    box-shadow: inset 2px 3px 5px rgba(255, 255, 255, 0.55);
-
-    &::after {
-      content: '';
-      position: absolute;
-      top: 100%;
-      left: 50%;
-      width: 1px;
-      height: 18px;
-      background: rgba(50, 157, 210, 0.45);
-    }
-
-    &--blue {
-      left: 14px;
-      background: radial-gradient(circle at 30% 25%, #73c7f0, #329DD2);
-      animation: top-balloon-fly 4.8s linear -0.6s infinite;
-    }
-
-    &--red {
-      left: 42px;
-      width: 16px;
-      height: 20px;
-      background: radial-gradient(circle at 30% 25%, #ff767a, #EB2F33);
-      animation: top-balloon-fly 5.6s linear -2.8s infinite;
-    }
-
-    &--white {
-      right: 44px;
-      width: 17px;
-      height: 21px;
-      background: radial-gradient(circle at 30% 25%, #ffffff, #d9ebf6);
-      border: 1px solid rgba(50, 157, 210, 0.25);
-      animation: top-balloon-fly 5.2s linear -1.7s infinite;
-    }
-
-    &--right-1 {
-      left: auto;
-      right: 14px;
-      animation: top-balloon-fly 4.6s linear -3.5s infinite;
-    }
-
-    &--right-2 {
-      left: auto;
-      right: 76px;
-      display: none;
-      animation: top-balloon-fly 5.9s linear -2.1s infinite;
-      @media (min-width: 640px) { display: block; }
-    }
-  }
-}
-
-@keyframes top-balloon-fly {
-  0% {
-    transform: translate3d(0, 0, 0) rotate(-4deg);
-    opacity: 0;
-  }
-  15% {
-    opacity: 0.95;
-  }
-  50% {
-    transform: translate3d(8px, -78px, 0) rotate(5deg);
-    opacity: 0.95;
-  }
-  85% {
-    opacity: 0.85;
-  }
-  100% {
-    transform: translate3d(-6px, -165px, 0) rotate(-4deg);
-    opacity: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .top-balloons .tb {
-    animation-duration: 12s;
   }
 }
 

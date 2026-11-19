@@ -3,8 +3,7 @@ import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { GoogleDriveGalleryService, GalleryPhoto, GallerySession } from './services/google-drive-gallery.service';
 import { SeasonalCampaignConfig, SeasonalCampaignService } from './services/seasonal-campaign.service';
-import { MensDayGreetingCard } from './components/mens-day-greeting-card/mens-day-greeting-card';
-import { MensDayPhotoTree, TreeFocusRequest } from './components/mens-day-photo-tree/mens-day-photo-tree';
+import { TeachersDayLetter } from './components/teachers-day-letter/teachers-day-letter';
 
 /** Wrapper cho windowing - giữ index gốc để opacity toggle đúng */
 export interface MasonryPhotoItem {
@@ -19,7 +18,7 @@ export interface VisiblePhoto {
 
 @Component({
   selector: 'app-event-gallery',
-  imports: [CommonModule, MensDayGreetingCard, MensDayPhotoTree],
+  imports: [CommonModule, TeachersDayLetter],
   templateUrl: './event-gallery.html',
   styleUrl: './event-gallery.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -43,16 +42,14 @@ export class EventGallery implements OnInit, OnDestroy {
   lightboxIndex = signal<number>(0);
   errorMessage = signal<string | null>(null);
   galleryStatus = signal<'PENDING' | 'READY'>('PENDING');
-  viewMode = signal<'tree' | 'slideshow' | 'grid'>('slideshow');
+  viewMode = signal<'letter' | 'slideshow' | 'grid'>('slideshow');
   eventViewMode = signal<'masonry' | 'feed'>('masonry');
   loadedImages = signal<Set<string>>(new Set());
 
-  // ===== SEASONAL CAMPAIGN (INTERNATIONAL MEN'S DAY 19/11) =====
+  // ===== SEASONAL CAMPAIGN (VIETNAMESE TEACHERS' DAY 20/11) =====
   activeSeasonalCampaign = signal<SeasonalCampaignConfig | null>(null);
-  isMensDayActive = computed(() => Boolean(this.activeSeasonalCampaign()));
-  showMensDayCard = signal<boolean>(false);
-  treeFocusRequest = signal<TreeFocusRequest | null>(null);
-  private treeFocusSeq = 0;
+  isTeachersDayActive = computed(() => Boolean(this.activeSeasonalCampaign()));
+  letterReplayTrigger = signal<number>(0);
 
   // ===== ZIP & DOWNLOAD SIGNALS =====
   isZippingAll = signal<boolean>(false);
@@ -172,7 +169,7 @@ export class EventGallery implements OnInit, OnDestroy {
   ];
 
   private demoSessionPhotos: GalleryPhoto[] = [
-    { mediaId: 'demo_ses_final', name: 'Dải ảnh in kỷ niệm 19/11', kind: 'image', role: 'final', thumbnailUrl: 'photos/photo1.png', mediaUrl: 'photos/photo1.png', lightboxUrl: 'photos/photo1.png', downloadUrl: 'photos/photo1.png', createdTime: new Date().toISOString() },
+    { mediaId: 'demo_ses_final', name: 'Dải ảnh in kỷ niệm 20/11', kind: 'image', role: 'final', thumbnailUrl: 'photos/photo1.png', mediaUrl: 'photos/photo1.png', lightboxUrl: 'photos/photo1.png', downloadUrl: 'photos/photo1.png', createdTime: new Date().toISOString() },
     { mediaId: 'demo_ses_shot1', name: 'Khoảnh khắc #1', kind: 'image', role: 'shot', slotIndex: 1, thumbnailUrl: 'photos/photo2.png', mediaUrl: 'photos/photo2.png', lightboxUrl: 'photos/photo2.png', downloadUrl: 'photos/photo2.png', createdTime: new Date().toISOString() },
     { mediaId: 'demo_ses_shot2', name: 'Khoảnh khắc #2', kind: 'image', role: 'shot', slotIndex: 2, thumbnailUrl: 'photos/photo3.png', mediaUrl: 'photos/photo3.png', lightboxUrl: 'photos/photo3.png', downloadUrl: 'photos/photo3.png', createdTime: new Date().toISOString() },
     { mediaId: 'demo_ses_shot3', name: 'Khoảnh khắc #3', kind: 'image', role: 'shot', slotIndex: 3, thumbnailUrl: 'photos/photo4.png', mediaUrl: 'photos/photo4.png', lightboxUrl: 'photos/photo4.png', downloadUrl: 'photos/photo4.png', createdTime: new Date().toISOString() },
@@ -303,13 +300,9 @@ export class EventGallery implements OnInit, OnDestroy {
         const campaign = this.seasonalCampaignService.getActiveCampaign(themeOverride);
         this.activeSeasonalCampaign.set(campaign);
         if (this.isSessionGallery && campaign) {
-          this.showMensDayCard.set(true);
-          this.viewMode.set('tree');
-        } else {
-          this.showMensDayCard.set(false);
-          if (this.viewMode() === 'tree') {
-            this.viewMode.set('slideshow');
-          }
+          this.viewMode.set('letter');
+        } else if (this.viewMode() === 'letter') {
+          this.viewMode.set('slideshow');
         }
 
         this.driveService.setRouteQuery(legacyQueryValue, sessionPublicId, isConsent);
@@ -603,82 +596,48 @@ export class EventGallery implements OnInit, OnDestroy {
   selectPhoto(index: number) {
     this.resetMainZoom();
     this.selectedIndex.set(index);
-    if (this.viewMode() === 'tree') {
-      this.treeFocusRequest.set({ index, seq: ++this.treeFocusSeq });
-      this.scrollThumbIntoView(index);
-    } else {
+    if (this.viewMode() !== 'letter') {
       this.syncScrollAnimations(index);
     }
   }
 
-  // ===== SEASONAL 19/11 GREETING CARD & 3D PHOTO TREE HANDLERS =====
+  // ===== SEASONAL 20/11 TEACHERS' DAY LETTER HANDLERS =====
 
-  enterTreeFromCard() {
-    this.showMensDayCard.set(false);
-    this.viewMode.set('tree');
+  replayTeachersDayLetter() {
+    if (!this.isTeachersDayActive()) return;
+    if (this.viewMode() !== 'letter') {
+      this.viewMode.set('letter');
+      // Component mounts fresh and auto-plays its fullscreen opening sequence
+      return;
+    }
+    this.letterReplayTrigger.update(n => n + 1);
   }
 
-  skipCardToSlideshow() {
-    this.showMensDayCard.set(false);
-    this.viewMode.set('slideshow');
+  onLetterIndexChange(index: number) {
+    this.resetMainZoom();
+    this.selectedIndex.set(index);
   }
 
-  reopenMensDayCard() {
-    if (!this.isMensDayActive()) return;
-    this.showMensDayCard.set(true);
-  }
-
-  onTreePhotoSelected(index: number) {
+  onLetterPhotoZoom(index: number) {
     this.selectedIndex.set(index);
     this.openLightbox(index);
   }
 
-  onTreeFrontIndexChange(index: number) {
-    this.selectedIndex.set(index);
-    this.scrollThumbIntoView(index);
-  }
+  readonly getLetterPhotoSrc = (photo: GalleryPhoto): string => {
+    return this.getSessionPhotoSrc(photo);
+  };
 
-  onTreeThumbnailClick(index: number) {
-    if (this.viewMode() === 'tree') {
-      if (this.selectedIndex() === index) {
-        this.openLightbox(index);
-      } else {
-        this.selectedIndex.set(index);
-        this.treeFocusRequest.set({ index, seq: ++this.treeFocusSeq });
-        this.scrollThumbIntoView(index);
-      }
-      return;
-    }
-    this.selectPhoto(index);
-  }
+  readonly getLetterThumbSrc = (photo: GalleryPhoto): string => {
+    return this.getPreviewSrc(photo);
+  };
 
-  getCardPreviewPhotoUrl(): string | null {
-    const first = this.photos().find(p => !this.isVideo(p));
-    return first ? this.getTreePreviewSrc(first) : null;
-  }
-
-  readonly getTreePreviewSrc = (photo: GalleryPhoto): string => {
-    if (!photo || this.isVideo(photo)) return this.VIDEO_FALLBACK_SVG;
-    if (photo.mediaId.startsWith('demo')) return photo.mediaUrl;
-    if (photo._thumbError || photo._mainError) return this.driveService.getDownloadUrl(photo);
-    return photo.thumbnailUrl || this.getSessionPhotoSrc(photo);
+  readonly getLetterVideoSrc = (photo: GalleryPhoto): string => {
+    return this.getVideoPreviewSrc(photo);
   };
 
   readonly isVideoFn = (photo: GalleryPhoto | null | undefined): boolean => {
     return this.isVideo(photo);
   };
-
-  private scrollThumbIntoView(index: number) {
-    if (typeof document === 'undefined' || typeof requestAnimationFrame === 'undefined') return;
-    requestAnimationFrame(() => {
-      const strip = document.querySelector<HTMLElement>('.thumbnail-strip');
-      const thumbEl = document.querySelectorAll<HTMLElement>('.thumbnail-item')[index];
-      if (strip && thumbEl) {
-        const targetLeft = thumbEl.offsetLeft - (strip.clientWidth - thumbEl.clientWidth) / 2;
-        strip.scrollTo({ left: Math.max(0, targetLeft), behavior: 'smooth' });
-      }
-    });
-  }
 
   openSessionByPhoto(photo: GalleryPhoto, index = 0) {
     this.lightboxIndex.set(index);
