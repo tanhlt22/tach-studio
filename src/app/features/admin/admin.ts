@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import JSZip from 'jszip';
+import { AdminDialogDirective } from './admin-dialog.directive';
 
 export interface BoothMachine {
   id: string;
@@ -115,7 +116,7 @@ export interface EventSession {
 
 @Component({
   selector: 'app-admin',
-  imports: [CommonModule, FormsModule, RouterModule],
+  imports: [CommonModule, FormsModule, RouterModule, AdminDialogDirective],
   templateUrl: './admin.html',
   styleUrl: './admin.scss'
 })
@@ -123,11 +124,13 @@ export class Admin implements OnInit, OnDestroy {
   private cdr = inject(ChangeDetectorRef);
 
   adminSecret = signal<string>('');
+  showAdminSecret = signal<boolean>(false);
   isAuthenticated = signal<boolean>(false);
   activeTab = signal<'monitoring' | 'revenue' | 'marketing' | 'events' | 'settings'>('monitoring');
   isLoading = signal<boolean>(false);
   errorMessage = signal<string>('');
   successMessage = signal<string>('');
+  modalCopiedMessage = signal<string>('');
   resettingMachineId = signal<string | null>(null);
 
   // Data Signals (Clean initialization with no mock data)
@@ -272,6 +275,7 @@ export class Admin implements OnInit, OnDestroy {
   isEventModalOpen = signal<boolean>(false);
   isCreateEventMode = signal<boolean>(true);
   isSavingEvent = signal<boolean>(false);
+  editingEventMeta = signal<BoothEvent | null>(null);
   eventForm = signal<{
     id: string;
     name: string;
@@ -292,6 +296,7 @@ export class Admin implements OnInit, OnDestroy {
   isMachineModalOpen = signal<boolean>(false);
   isCreateMode = signal<boolean>(false);
   isSavingMachine = signal<boolean>(false);
+  editingMachineMeta = signal<BoothMachine | null>(null);
 
   // System Settings State (Cloudflare D1 Dynamic Config)
   settingsForm = signal<{
@@ -339,6 +344,38 @@ export class Admin implements OnInit, OnDestroy {
   machines = signal<BoothMachine[]>([]);
   transactions = signal<BoothTransaction[]>([]);
   filterOnlyVouchers = signal<boolean>(false);
+
+  onlineMachinesCount = computed(() =>
+    this.machines().filter(m => m.status !== 'OFFLINE' && m.status !== 'ERROR').length
+  );
+
+  hasMachineAlert = computed(() =>
+    this.machines().some(m => m.paper_remaining <= 20 || m.status === 'ERROR' || m.status === 'OFFLINE')
+  );
+
+  activeTabTitle = computed(() => {
+    switch (this.activeTab()) {
+      case 'monitoring': return 'Phòng máy';
+      case 'revenue': return 'Doanh thu';
+      case 'marketing': return 'Marketing';
+      case 'events': return this.selectedEvent() ? this.selectedEvent()!.name : 'Sự kiện';
+      case 'settings': return 'Cấu hình';
+    }
+  });
+
+  isCurrentTabLoading = computed(() => {
+    switch (this.activeTab()) {
+      case 'monitoring':
+      case 'revenue':
+        return this.isLoading();
+      case 'marketing':
+        return this.isLoadingMarketing();
+      case 'events':
+        return this.isLoadingEvents() || this.isLoadingEventSessions();
+      case 'settings':
+        return this.isLoadingSettings();
+    }
+  });
 
   filteredTransactions = computed(() => {
     let list = this.transactions();
@@ -406,7 +443,7 @@ export class Admin implements OnInit, OnDestroy {
   async login() {
     const secret = this.adminSecret().trim();
     if (!secret) {
-      this.errorMessage.set('Vui lòng nhập mã bảo mật Admin Secret.');
+      this.errorMessage.set('Vui lòng nhập mật khẩu quản trị.');
       return;
     }
 
@@ -435,10 +472,10 @@ export class Admin implements OnInit, OnDestroy {
           }
           this.loadSettings();
         } else {
-          this.errorMessage.set('Mật khẩu Admin Secret không hợp lệ.');
+          this.errorMessage.set('Mật khẩu quản trị không hợp lệ.');
         }
       } else if (response.status === 401 || response.status === 403) {
-        this.errorMessage.set('Mật khẩu Admin Secret không chính xác. Vui lòng kiểm tra lại!');
+        this.errorMessage.set('Mật khẩu quản trị không chính xác. Vui lòng kiểm tra lại!');
       } else {
         this.errorMessage.set(`Lỗi kết nối máy chủ (${response.status}). Vui lòng thử lại sau.`);
       }
@@ -516,7 +553,7 @@ export class Admin implements OnInit, OnDestroy {
       } else if (response.status === 401 || response.status === 403) {
         localStorage.removeItem('tach_admin_secret');
         this.isAuthenticated.set(false);
-        this.errorMessage.set('Phiên đăng nhập đã hết hạn. Vui lòng nhập lại Admin Secret.');
+        this.errorMessage.set('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       } else if (!silent) {
         console.warn('Could not connect to live Cloudflare Worker.');
       }
@@ -644,7 +681,7 @@ export class Admin implements OnInit, OnDestroy {
               is_featured: p.isFeatured === true || p.is_featured === 1 ? 1 : 0,
               created_at: p.createdAt || p.created_at || '',
               final_drive_file_id: p.finalDriveFileId || p.final_drive_file_id || '',
-              signed_final_url: p.finalPhoto?.mediaUrl || p.finalPhoto?.downloadUrl || p.signed_final_url || '',
+              signed_final_url: p.finalPhoto?.lightboxUrl || p.finalPhoto?.mediaUrl || p.finalPhoto?.downloadUrl || p.signed_final_url || '',
               signed_thumb_url: p.finalPhoto?.thumbnailUrl || p.finalPhoto?.mediaUrl || p.signed_thumb_url || p.signed_final_url || '',
               signed_guest_share_url: p.guestShareUrl || p.signed_guest_share_url || ''
             };
@@ -712,6 +749,9 @@ export class Admin implements OnInit, OnDestroy {
 
     // Optimistic local update
     this.marketingPhotos.update(list => list.map(p => p.id === photo.id ? { ...p, is_featured: nextFeatured } : p));
+    if (this.previewPhoto()?.id === photo.id) {
+      this.previewPhoto.update(p => p ? { ...p, is_featured: nextFeatured } : p);
+    }
 
     try {
       await fetch(`${this.defaultWorkerUrl}/v1/admin/marketing-photos/star`, {
@@ -873,7 +913,7 @@ export class Admin implements OnInit, OnDestroy {
             store_id: e.store_id || 'store_hp_01',
             machine_id: e.machine_id || '',
             machine_name: e.machine_name || this.getMachineName(e.machine_id) || '',
-            name: e.name || e.id,
+            name: e.name || 'Sự kiện',
             date: e.date || (e.created_at ? e.created_at.slice(0, 10) : ''),
             drive_folder_id: e.drive_folder_id || '',
             gallery_url: e.gallery_url || '',
@@ -895,13 +935,15 @@ export class Admin implements OnInit, OnDestroy {
     }
   }
 
-  async selectEvent(evt: BoothEvent) {
+  async selectEvent(evt: BoothEvent, keepFilter: boolean = false) {
     this.selectedEvent.set(evt);
     this.isLoadingEventSessions.set(true);
-    this.eventSessions.set([]);
-    this.selectedSession.set(null);
-    this.selectedEventDateFilter.set('all');
-    this.customEventDate = '';
+    if (!keepFilter) {
+      this.eventSessions.set([]);
+      this.selectedSession.set(null);
+      this.selectedEventDateFilter.set('all');
+      this.customEventDate = '';
+    }
 
     try {
       const params = new URLSearchParams();
@@ -923,14 +965,14 @@ export class Admin implements OnInit, OnDestroy {
             const finalPhoto = s.finalPhoto ? {
               id: s.finalPhoto.id || `${s.id}_final`,
               name: s.finalPhoto.name || `${s.id}_final.jpg`,
-              signedUrl: s.finalPhoto.mediaUrl || s.finalPhoto.downloadUrl || s.finalPhoto.signedUrl || '',
+              signedUrl: s.finalPhoto.lightboxUrl || s.finalPhoto.mediaUrl || s.finalPhoto.downloadUrl || s.finalPhoto.signedUrl || '',
               signedThumbUrl: s.finalPhoto.thumbnailUrl || s.finalPhoto.mediaUrl || s.finalPhoto.signedThumbUrl || ''
             } : null;
 
             const shots = Array.isArray(s.shots) ? s.shots.map((sh: any, idx: number) => ({
               id: sh.id || `${s.id}_shot_${idx + 1}`,
               name: sh.name || `Shot ${idx + 1}`,
-              signedUrl: sh.mediaUrl || sh.downloadUrl || sh.signedUrl || '',
+              signedUrl: sh.lightboxUrl || sh.mediaUrl || sh.downloadUrl || sh.signedUrl || '',
               signedThumbUrl: sh.thumbnailUrl || sh.mediaUrl || sh.signedThumbUrl || ''
             })) : [];
 
@@ -988,10 +1030,12 @@ export class Admin implements OnInit, OnDestroy {
 
   openEventQr(evt: BoothEvent, ev?: MouseEvent) {
     if (ev) ev.stopPropagation();
+    this.modalCopiedMessage.set('');
     this.eventQrModal.set(evt);
   }
 
   closeEventQr() {
+    this.modalCopiedMessage.set('');
     this.eventQrModal.set(null);
   }
 
@@ -1055,8 +1099,12 @@ export class Admin implements OnInit, OnDestroy {
     if (ev) ev.stopPropagation();
     const url = this.getEventConsentedShareUrl(evt);
     navigator.clipboard.writeText(url);
+    this.modalCopiedMessage.set('Đã sao chép link ảnh khách đồng ý!');
     this.successMessage.set('Đã sao chép liên kết xem ảnh khách đồng ý (Marketing)!');
-    setTimeout(() => this.successMessage.set(''), 3000);
+    setTimeout(() => {
+      this.modalCopiedMessage.set('');
+      this.successMessage.set('');
+    }, 3000);
   }
 
   getEventQrUrl(evt: BoothEvent): string {
@@ -1071,8 +1119,12 @@ export class Admin implements OnInit, OnDestroy {
     if (ev) ev.stopPropagation();
     const url = this.getEventShareUrl(evt);
     navigator.clipboard.writeText(url);
+    this.modalCopiedMessage.set('Đã sao chép link sự kiện!');
     this.successMessage.set('Đã sao chép liên kết thư viện ảnh sự kiện!');
-    setTimeout(() => this.successMessage.set(''), 3000);
+    setTimeout(() => {
+      this.modalCopiedMessage.set('');
+      this.successMessage.set('');
+    }, 3000);
   }
 
   copyGuestShareUrl(url: string, ev?: MouseEvent) {
@@ -1085,7 +1137,7 @@ export class Admin implements OnInit, OnDestroy {
   getMachineName(machineId?: string): string {
     if (!machineId) return '';
     const found = this.machines().find(m => m.id === machineId);
-    return found ? found.name : machineId;
+    return found ? found.name : '';
   }
 
   // ==========================================
@@ -1093,6 +1145,7 @@ export class Admin implements OnInit, OnDestroy {
   // ==========================================
   openCreateEventModal(defaultMachineId?: string) {
     this.isCreateEventMode.set(true);
+    this.editingEventMeta.set(null);
     const mList = this.machines();
     const fallbackMachine = defaultMachineId || this.selectedEventMachineId || (mList.length > 0 ? mList[0].id : '');
     this.eventForm.set({
@@ -1108,6 +1161,7 @@ export class Admin implements OnInit, OnDestroy {
   openEditEventModal(evt: BoothEvent, ev?: MouseEvent) {
     if (ev) ev.stopPropagation();
     this.isCreateEventMode.set(false);
+    this.editingEventMeta.set(evt);
     this.eventForm.set({
       id: evt.id,
       name: evt.name,
@@ -1187,6 +1241,8 @@ export class Admin implements OnInit, OnDestroy {
       if (response.ok) {
         this.successMessage.set(`Đã xóa sự kiện "${evt.name}" thành công!`);
         setTimeout(() => this.successMessage.set(''), 3500);
+        this.isEventModalOpen.set(false);
+        this.editingEventMeta.set(null);
         if (this.selectedEvent()?.id === evt.id) {
           this.selectedEvent.set(null);
         }
@@ -1204,6 +1260,7 @@ export class Admin implements OnInit, OnDestroy {
   // ==========================================
   openCreateMachineModal() {
     this.isCreateMode.set(true);
+    this.editingMachineMeta.set(null);
     this.editForm.set({
       id: '',
       license_id: '',
@@ -1219,6 +1276,7 @@ export class Admin implements OnInit, OnDestroy {
 
   openEditMachineModal(m: BoothMachine) {
     this.isCreateMode.set(false);
+    this.editingMachineMeta.set(m);
     this.editForm.set({
       id: m.id,
       license_id: m.license_id || '',
@@ -1315,7 +1373,8 @@ export class Admin implements OnInit, OnDestroy {
   }
 
   async deleteMachine(machineId: string) {
-    if (!confirm(`Bạn có chắc chắn muốn xóa buồng chụp ${machineId} khỏi danh sách quản lý?`)) {
+    const machineLabel = this.getMachineName(machineId) || 'phòng chụp này';
+    if (!confirm(`Bạn có chắc chắn muốn xóa ${machineLabel} khỏi danh sách quản lý?`)) {
       return;
     }
 
@@ -1343,12 +1402,15 @@ export class Admin implements OnInit, OnDestroy {
       this.saveManagedMachineIds(currentIds);
 
       this.machines.update(list => list.filter(m => m.id !== machineId));
+      this.isMachineModalOpen.set(false);
+      this.editingMachineMeta.set(null);
       this.cdr.markForCheck();
     }
   }
 
   async resetPaper(machineId: string) {
-    if (!confirm(`Xác nhận bạn đã thay cuộn giấy DNP mới và muốn reset bộ đếm máy ${machineId} về 700 ảnh?`)) {
+    const machineLabel = this.getMachineName(machineId) || 'phòng chụp này';
+    if (!confirm(`Xác nhận bạn đã thay cuộn giấy DNP mới và muốn reset bộ đếm ${machineLabel} về 700 ảnh?`)) {
       return;
     }
 
@@ -1364,7 +1426,7 @@ export class Admin implements OnInit, OnDestroy {
       });
 
       if (response.ok) {
-        this.successMessage.set(`Đã reset thành công cuộn giấy máy ${machineId} về 700 ảnh!`);
+        this.successMessage.set(`Đã reset thành công cuộn giấy ${machineLabel} về 700 ảnh!`);
         setTimeout(() => this.successMessage.set(''), 4000);
       }
 
@@ -1397,15 +1459,25 @@ export class Admin implements OnInit, OnDestroy {
   getStatusBadge(status: string): { text: string; bg: string; textCol: string; dot: string } {
     switch (status) {
       case 'IDLE':
-        return { text: 'ĐANG RẢNH / CHỜ KHÁCH', bg: 'bg-emerald-50 border-emerald-200', textCol: 'text-emerald-800', dot: 'bg-emerald-500' };
+        return { text: 'Đang rảnh', bg: 'bg-emerald-50 border-emerald-200', textCol: 'text-emerald-800', dot: 'bg-emerald-500' };
       case 'IN_SESSION':
-        return { text: 'ĐANG CÓ KHÁCH CHỤP', bg: 'bg-amber-50 border-amber-200', textCol: 'text-amber-800', dot: 'bg-amber-500 animate-pulse' };
+        return { text: 'Đang chụp', bg: 'bg-amber-50 border-amber-200', textCol: 'text-amber-800', dot: 'bg-amber-500 animate-pulse' };
       case 'PRINTING':
-        return { text: 'ĐANG IN ẢNH...', bg: 'bg-purple-50 border-purple-200', textCol: 'text-purple-800', dot: 'bg-purple-500 animate-ping' };
+        return { text: 'Đang in', bg: 'bg-purple-50 border-purple-200', textCol: 'text-purple-800', dot: 'bg-purple-500 animate-ping' };
       case 'ERROR':
-        return { text: 'SỰ CỐ / KẸT GIẤY', bg: 'bg-red-50 border-red-200', textCol: 'text-red-800', dot: 'bg-red-500 animate-bounce' };
+        return { text: 'Sự cố', bg: 'bg-red-50 border-red-200', textCol: 'text-red-800', dot: 'bg-red-500 animate-bounce' };
       default:
-        return { text: 'MẤT MẠNG / OFFLINE', bg: 'bg-gray-100 border-gray-200', textCol: 'text-gray-600', dot: 'bg-gray-400' };
+        return { text: 'Offline', bg: 'bg-gray-100 border-gray-200', textCol: 'text-gray-600', dot: 'bg-gray-400' };
+    }
+  }
+
+  getPrinterStatusLabel(status?: string): string {
+    switch (status) {
+      case 'READY': return 'Sẵn sàng';
+      case 'PRINTING': return 'Đang in';
+      case 'OUT_OF_PAPER': return 'Hết giấy';
+      case 'PAPER_JAM': return 'Kẹt giấy';
+      default: return status || 'Sẵn sàng';
     }
   }
 
@@ -1464,6 +1536,27 @@ export class Admin implements OnInit, OnDestroy {
     }
   }
 
+  formatShortTime(isoString: string, idOrCode?: string): string {
+    const d = this.extractDateFromSessionId(idOrCode) || this.parseUtcDate(isoString);
+    if (!d) return isoString || '';
+    try {
+      const timeStr = d.toLocaleTimeString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const dateStr = d.toLocaleDateString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        day: '2-digit',
+        month: '2-digit'
+      });
+      return `${timeStr} • ${dateStr}`;
+    } catch {
+      return isoString || '';
+    }
+  }
+
   formatVND(amount: number): string {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
   }
@@ -1492,20 +1585,61 @@ export class Admin implements OnInit, OnDestroy {
   // SETTINGS & TAB SWITCHING
   // ==========================================
   switchTab(tab: 'monitoring' | 'revenue' | 'marketing' | 'events' | 'settings') {
-    this.activeTab.set(tab);
-    if (tab === 'revenue') {
+    if (tab === 'events' && this.activeTab() === 'events' && this.selectedEvent()) {
+      this.backToEventsList();
+    } else {
+      this.activeTab.set(tab);
+      if (tab === 'revenue') {
+        this.fetchCloudflareDashboard();
+      } else if (tab === 'marketing') {
+        if (this.eventsList().length === 0) {
+          this.fetchEvents();
+        }
+        this.fetchMarketingPhotos();
+      } else if (tab === 'events') {
+        this.fetchEvents();
+      } else if (tab === 'settings') {
+        this.loadSettings();
+      }
+    }
+
+    if (typeof window !== 'undefined' && window.scrollY > 80) {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    this.cdr.markForCheck();
+  }
+
+  refreshCurrentTab() {
+    const tab = this.activeTab();
+    if (tab === 'monitoring' || tab === 'revenue') {
       this.fetchCloudflareDashboard();
     } else if (tab === 'marketing') {
-      if (this.eventsList().length === 0) {
-        this.fetchEvents();
-      }
       this.fetchMarketingPhotos();
     } else if (tab === 'events') {
-      this.fetchEvents();
+      const currentEvt = this.selectedEvent();
+      if (currentEvt) {
+        this.selectEvent(currentEvt, true);
+      } else {
+        this.fetchEvents();
+      }
     } else if (tab === 'settings') {
       this.loadSettings();
     }
-    this.cdr.markForCheck();
+  }
+
+  goToMachineRevenue(machineId: string) {
+    this.selectedMachineId = machineId;
+    this.switchTab('revenue');
+  }
+
+  goToMachineEvents(machineId: string) {
+    this.selectedEventMachineId = machineId;
+    this.selectedEvent.set(null);
+    this.switchTab('events');
+  }
+
+  toggleShowAdminSecret() {
+    this.showAdminSecret.update(v => !v);
   }
 
   toggleShowTokens() {
@@ -1572,7 +1706,7 @@ export class Admin implements OnInit, OnDestroy {
       });
       const data = await response.json();
       if (response.ok && data.ok) {
-        this.successMessage.set('Đã lưu thành công cấu hình vào Cloudflare D1!');
+        this.successMessage.set('Đã lưu cấu hình thành công!');
         setTimeout(() => this.successMessage.set(''), 4000);
       } else {
         this.errorMessage.set(data.message || 'Không thể lưu cấu hình.');

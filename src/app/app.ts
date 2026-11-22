@@ -17,14 +17,24 @@ export class App {
   protected showFooter = signal(true);
 
   constructor(private router: Router) {
+    const initialPath = typeof window !== 'undefined' ? window.location.pathname : '';
+    this.syncShellVisibility(initialPath);
+
     this.router.events.pipe(
-      filter(e => e instanceof NavigationEnd)
-    ).subscribe((e: any) => {
-      const isGalleryPage = e.url.startsWith('/event/') || e.url.startsWith('/gallery/');
-      
-      // Trang gallery sự kiện: Hiện Header, Ẩn Footer để tối ưu giao diện xem ảnh toàn màn hình trên mobile
-      this.showHeader.set(true);
-      this.showFooter.set(!isGalleryPage);
+      filter((e): e is NavigationEnd => e instanceof NavigationEnd)
+    ).subscribe((e) => {
+      this.syncShellVisibility(e.urlAfterRedirects || e.url || '');
     });
+  }
+
+  private syncShellVisibility(rawUrl: string) {
+    const path = rawUrl.split('?')[0];
+    const isGalleryPage = path.startsWith('/event/') || path.startsWith('/gallery/');
+    const isAdminPage = path === '/admin' || path.startsWith('/admin/');
+
+    // Trang gallery sự kiện: Hiện Header, Ẩn Footer.
+    // Trang admin: Ẩn cả Header & Footer marketing để nhường không gian thao tác di động.
+    this.showHeader.set(!isAdminPage);
+    this.showFooter.set(!isGalleryPage && !isAdminPage);
   }
 }
