@@ -140,12 +140,14 @@ export class EventGallery implements OnInit, OnDestroy {
   private readonly SESSION_POLL_INTERVAL_MS = 2500;
   private readonly AUTO_STOP_MS = 5 * 60 * 1000;
   private readonly SESSION_AUTO_STOP_MS = 3 * 60 * 1000;
+  private readonly SESSION_READY_GRACE_MS = 20 * 1000;
   private isSessionGallery = false;
+  private sessionPublicId: string | null = null;
   private readonly visibilityHandler = () => {
     if (document.hidden) {
       this.stopPolling();
     } else if (this.eventId && !this.errorMessage()) {
-      if (this.isSessionGallery || this.galleryStatus() === 'PENDING') {
+      if (this.shouldPollGallery(this.galleryStatus(), this.photos())) {
         this.startPolling();
       }
     }
@@ -159,6 +161,7 @@ export class EventGallery implements OnInit, OnDestroy {
   private preparedShareFile: File | null = null;
   private preparedShareMediaId: string | null = null;
   private sharePrepareAbort: AbortController | null = null;
+  private sharePrepareTimeoutId: ReturnType<typeof setTimeout> | null = null;
 
   // Demo mode
   private demoPhotos: GalleryPhoto[] = [
@@ -295,6 +298,7 @@ export class EventGallery implements OnInit, OnDestroy {
         const isConsent = consentParam === '1' || consentParam === 'true';
         this.isConsentOnly.set(isConsent);
         this.isSessionGallery = isSessionFlow;
+        this.sessionPublicId = sessionPublicId;
         this.isSingleSession.set(isSessionFlow);
 
         const campaign = this.seasonalCampaignService.getActiveCampaign(themeOverride);
@@ -315,6 +319,10 @@ export class EventGallery implements OnInit, OnDestroy {
     this.stopPolling();
     document.removeEventListener('visibilitychange', this.visibilityHandler);
     this.lruCache.clear();
+    if (this.sharePrepareTimeoutId) {
+      clearTimeout(this.sharePrepareTimeoutId);
+      this.sharePrepareTimeoutId = null;
+    }
     this.sharePrepareAbort?.abort();
     this.sharePrepareAbort = null;
     this.preparedShareFile = null;
@@ -370,12 +378,10 @@ export class EventGallery implements OnInit, OnDestroy {
         this.photos.set(this.sortPhotos(photos));
         photos.forEach(p => this.knownMediaIds.add(p.mediaId));
         this.isLoading.set(false);
-        if (this.isSessionGallery) {
-          // Luồng phiên chụp: Luôn bật polling tự động để đón các ảnh chụp (shots) và video hậu trường (bts) đang tải lên
-          this.pollIntervalMs = this.SESSION_POLL_INTERVAL_MS;
-          this.startPolling();
-        } else if (result.status === 'PENDING') {
-          this.pollIntervalMs = result.pollAfterMs || this.POLL_BASE_MS;
+        if (this.shouldPollGallery(result.status, photos)) {
+          this.pollIntervalMs = this.isSessionGallery
+            ? (result.pollAfterMs || this.SESSION_POLL_INTERVAL_MS)
+            : (result.pollAfterMs || this.POLL_BASE_MS);
           this.startPolling();
         } else {
           this.stopPolling();
@@ -393,7 +399,7 @@ export class EventGallery implements OnInit, OnDestroy {
 
   private startPolling() {
     if (this.pollTimeoutId || !this.eventId || this.errorMessage()) return;
-    if (!this.isSessionGallery && this.galleryStatus() !== 'PENDING') return;
+    if (!this.shouldPollGallery(this.galleryStatus(), this.photos())) return;
     this.isPolling.set(true);
     this.noNewPhotosSince = Date.now();
     this.pollIntervalMs = this.isSessionGallery
@@ -461,7 +467,14 @@ export class EventGallery implements OnInit, OnDestroy {
           }
         }
 
-        const autoStopLimit = this.isSessionGallery ? this.SESSION_AUTO_STOP_MS : this.AUTO_STOP_MS;
+        if (!this.shouldPollGallery(result.status, this.photos())) {
+          this.stopPolling();
+          return;
+        }
+
+        const autoStopLimit = this.isSessionGallery
+          ? (result.status === 'READY' ? this.SESSION_READY_GRACE_MS : this.SESSION_AUTO_STOP_MS)
+          : this.AUTO_STOP_MS;
         if (Date.now() - this.noNewPhotosSince > autoStopLimit) {
           this.stopPolling();
           if (this.photos().length === 0) {
@@ -481,6 +494,27 @@ export class EventGallery implements OnInit, OnDestroy {
         this.stopPolling();
       }
     });
+  }
+
+  private shouldPollGallery(status: string, photos: GalleryPhoto[]): boolean {
+    if (status === 'PENDING') return true;
+    if (!this.isSessionGallery) return false;
+    if (this.isSessionOlderThan(4 * 60 * 1000)) return false;
+    return !this.hasCompleteSessionMedia(photos);
+  }
+
+  private hasCompleteSessionMedia(photos: GalleryPhoto[]): boolean {
+    const hasFinal = photos.some(p => p.role === 'final');
+    const hasShot = photos.some(p => p.role === 'shot');
+    const hasVideo = photos.some(p => this.isVideo(p));
+    return hasFinal && hasShot && hasVideo;
+  }
+
+  private isSessionOlderThan(maxAgeMs: number): boolean {
+    if (!this.sessionPublicId || !this.sessionPublicId.startsWith('ses_')) return false;
+    const timestamp = Number.parseInt(this.sessionPublicId.slice(4, 16), 16);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return false;
+    return Date.now() - timestamp > maxAgeMs;
   }
 
   retrySessionSync() {
@@ -1016,42 +1050,50 @@ export class EventGallery implements OnInit, OnDestroy {
 
   private prepareShareFile(photo: GalleryPhoto | undefined): void {
     if (photo && this.preparedShareMediaId === photo.mediaId &&
-      (this.preparedShareFile || this.sharePrepareAbort)) {
+      (this.preparedShareFile || this.sharePrepareAbort || this.sharePrepareTimeoutId)) {
       return;
     }
 
+    if (this.sharePrepareTimeoutId) {
+      clearTimeout(this.sharePrepareTimeoutId);
+      this.sharePrepareTimeoutId = null;
+    }
     this.sharePrepareAbort?.abort();
     this.sharePrepareAbort = null;
     this.preparedShareFile = null;
     this.preparedShareMediaId = null;
 
-    if (!photo || !this.isIOSDevice()) return;
+    if (!photo || this.isVideo(photo) || !this.isIOSDevice()) return;
 
     const url = this.driveService.getDownloadUrl(photo);
     if (!url) return;
 
-    const controller = new AbortController();
-    this.sharePrepareAbort = controller;
     this.preparedShareMediaId = photo.mediaId;
+    this.sharePrepareTimeoutId = setTimeout(() => {
+      this.sharePrepareTimeoutId = null;
+      if (this.preparedShareMediaId !== photo.mediaId || this.preparedShareFile) return;
+      const controller = new AbortController();
+      this.sharePrepareAbort = controller;
 
-    void this.fetchValidMediaBlob(photo, controller.signal)
-      .then(blob => {
-        if (!blob || controller.signal.aborted || this.sharePrepareAbort !== controller) return;
+      void this.fetchValidMediaBlob(photo, controller.signal)
+        .then(blob => {
+          if (!blob || controller.signal.aborted || this.sharePrepareAbort !== controller) return;
 
-        const mimeType = this.getShareMimeType(photo);
-        const fileName = photo.name?.trim() || (this.isVideo(photo) ? 'event-media.mp4' : 'event-media.jpg');
-        this.preparedShareFile = new File([blob], fileName, { type: mimeType });
-        this.sharePrepareAbort = null;
-      })
-      .catch(error => {
-        if (this.isShareAbortError(error) || controller.signal.aborted) return;
-        if (this.sharePrepareAbort === controller) {
+          const mimeType = this.getShareMimeType(photo);
+          const fileName = photo.name?.trim() || 'event-media.jpg';
+          this.preparedShareFile = new File([blob], fileName, { type: mimeType });
           this.sharePrepareAbort = null;
-          this.preparedShareFile = null;
-          this.preparedShareMediaId = null;
-          console.warn('[Gallery] Could not prepare image for sharing:', error);
-        }
-      });
+        })
+        .catch(error => {
+          if (this.isShareAbortError(error) || controller.signal.aborted) return;
+          if (this.sharePrepareAbort === controller) {
+            this.sharePrepareAbort = null;
+            this.preparedShareFile = null;
+            this.preparedShareMediaId = null;
+            console.warn('[Gallery] Could not prepare image for sharing:', error);
+          }
+        });
+    }, 350);
   }
 
   private async fetchValidMediaBlob(photo: GalleryPhoto, signal?: AbortSignal): Promise<Blob | null> {

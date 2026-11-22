@@ -4,7 +4,7 @@ import { getSystemConfig } from './_config.js';
 
 const DRIVE_FILES_URL = 'https://www.googleapis.com/drive/v3/files';
 const DRIVE_API_KEY = process.env.GOOGLE_DRIVE_API_KEY;
-const MEDIA_PROXY_URL = process.env.PUBLIC_MEDIA_PROXY_URL || 'https://image-photobooth.laihoanganh456.workers.dev';
+const MEDIA_PROXY_URL = process.env.PUBLIC_MEDIA_PROXY_URL || 'https://media.event-vn.com';
 const GALLERY_RESOLVER_URL = process.env.GALLERY_RESOLVER_URL || 'https://tanhbooth-api.laihoanganh456.workers.dev';
 const GALLERY_RESOLVER_SECRET = process.env.GALLERY_RESOLVER_SECRET || 'theanh2002';
 const ALLOWED_ORIGINS = new Set([

@@ -95,7 +95,7 @@ async function proxyOpaqueMedia(request, url, route, env, ctx) {
   if (cache && shouldEdgeCache) {
     const cachedResponse = await cache.match(cacheKey);
     if (cachedResponse && !isHtmlOrErrorResponse(cachedResponse)) {
-      return withCors(cachedResponse, request);
+      return withCors(cachedResponse, request, { publicRead: true, cacheStatus: 'HIT' });
     }
   }
 
@@ -148,7 +148,7 @@ async function proxyOpaqueMedia(request, url, route, env, ctx) {
     status: upstream.status,
     statusText: upstream.statusText,
     headers
-  }), request);
+  }), request, { publicRead: true, cacheStatus: shouldEdgeCache ? 'MISS' : 'BYPASS' });
 
   if (cache && shouldEdgeCache && ctx && upstream.status === 200) {
     ctx.waitUntil(cache.put(cacheKey, response.clone()));
@@ -434,7 +434,7 @@ async function proxyLegacyMedia(request, url, env, ctx) {
     }
   }
 
-  return withCors(response, request);
+  return withCors(response, request, { publicRead: true });
 }
 
 function getMediaRoute(url) {
@@ -529,14 +529,23 @@ function isAllowedOrigin(origin) {
   }
 }
 
-function withCors(response, request) {
+function withCors(response, request, options = {}) {
   const headers = new Headers(response.headers);
-  const origin = request.headers.get('Origin');
-  if (origin && isAllowedOrigin(origin)) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Vary', 'Origin');
-  } else {
+  if (options.publicRead) {
+    // Public tokenized media reads use wildcard CORS without Vary: Origin so Cloudflare edge cache is never fragmented per origin.
     headers.set('Access-Control-Allow-Origin', '*');
+    headers.delete('Vary');
+  } else {
+    const origin = request.headers.get('Origin');
+    if (origin && isAllowedOrigin(origin)) {
+      headers.set('Access-Control-Allow-Origin', origin);
+      headers.set('Vary', 'Origin');
+    } else {
+      headers.set('Access-Control-Allow-Origin', '*');
+    }
+  }
+  if (options.cacheStatus) {
+    headers.set('X-Media-Cache', options.cacheStatus);
   }
   headers.set('Access-Control-Allow-Methods', 'GET, HEAD, PUT, OPTIONS');
   headers.set('Access-Control-Allow-Headers', 'Range, If-Range, If-None-Match, If-Modified-Since, Content-Type, Content-Range, X-Upload-Content-Type, X-Upload-Content-Length');

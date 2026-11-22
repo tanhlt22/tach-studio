@@ -75,7 +75,7 @@ export default async function handler(req, res) {
       return res.status(502).json({ error: 'Could not prepare upload' });
     }
 
-    const proxyBaseUrl = process.env.PUBLIC_MEDIA_PROXY_URL || 'https://image-photobooth.laihoanganh456.workers.dev';
+    const proxyBaseUrl = process.env.PUBLIC_MEDIA_PROXY_URL || 'https://media.event-vn.com';
     const uploadProxyToken = createResumableUploadToken({ uploadUrl, mimeType, fileSize });
     return res.status(200).json({
       uploadUrl: `${proxyBaseUrl.replace(/\/$/, '')}/upload/${uploadProxyToken}`
