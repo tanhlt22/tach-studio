@@ -4,6 +4,7 @@ const TOKEN_REFRESH_SKEW_MS = 60_000;
 
 let cachedGoogleToken = null;
 let tokenRefreshPromise = null;
+const warmingVideoKeys = new Set();
 
 function getCandidateSecrets(env) {
   const list = [
@@ -71,8 +72,9 @@ export default {
 
 async function proxyOpaqueMedia(request, url, route, env, ctx) {
   const cache = typeof caches !== 'undefined' && caches.default ? caches.default : null;
-  const cacheKey = new Request(url.toString(), { method: 'GET' });
-  const isThumbnail = url.searchParams.get('variant') === 'thumbnail';
+  const variant = (url.searchParams.get('variant') || '').toLowerCase();
+  const isThumbnail = variant === 'thumbnail';
+  const forceWebp = variant === 'webp' || url.searchParams.get('format') === 'webp';
 
   const secrets = getCandidateSecrets(env);
   if (secrets.length === 0) return withCors(json({ error: 'Media is temporarily unavailable' }, 503), request);
@@ -89,24 +91,68 @@ async function proxyOpaqueMedia(request, url, route, env, ctx) {
     return withCors(json({ error: 'Media not found' }, 404), request);
   }
 
-  const isPreviewImage = !route.download && (payload.kind === 'image' || isThumbnail);
-  const shouldEdgeCache = isPreviewImage && request.method === 'GET' && !request.headers.has('Range');
+  const isOriginalImage = !route.download && payload.kind === 'image' && variant === 'original';
+  const isPreviewImage = !route.download && !isOriginalImage && (payload.kind === 'image' || isThumbnail);
+  const isImageOriginalCacheable = payload.kind === 'image' && (isOriginalImage || route.download);
+  const isVideoCacheable = payload.kind === 'video' && !isThumbnail;
+  const hasRangeHeader = request.headers.has('Range');
+  const shouldEdgeCache = (isPreviewImage || isImageOriginalCacheable || isVideoCacheable)
+    && (request.method === 'GET' || (isVideoCacheable && request.method === 'HEAD'));
 
-  if (cache && shouldEdgeCache) {
+  const cacheKeyUrl = new URL(url.toString());
+  if (isImageOriginalCacheable) {
+    cacheKeyUrl.pathname = url.pathname.replace(/\/download$/, '');
+    cacheKeyUrl.search = '?variant=original';
+  } else if (isVideoCacheable) {
+    cacheKeyUrl.pathname = url.pathname.replace(/\/download$/, '');
+    cacheKeyUrl.search = '';
+  }
+  const cacheKey = new Request(cacheKeyUrl.toString(), { method: 'GET' });
+
+  if (cache && shouldEdgeCache && (isVideoCacheable || (!hasRangeHeader && request.method === 'GET'))) {
     const cachedResponse = await cache.match(cacheKey);
     if (cachedResponse && !isHtmlOrErrorResponse(cachedResponse)) {
+      if (isVideoCacheable && request.method === 'HEAD') {
+        cancelBody(cachedResponse);
+        const headHeaders = buildMediaResponseHeaders(cachedResponse.headers, payload, isThumbnail, route);
+        return withCors(new Response(null, {
+          status: 200,
+          statusText: 'OK',
+          headers: headHeaders
+        }), request, { publicRead: true, cacheStatus: 'HIT' });
+      }
+      if (isVideoCacheable && hasRangeHeader && !route.download) {
+        const rangedRes = await createRangedMediaResponse(cachedResponse, request.headers.get('Range'), payload, isThumbnail);
+        if (rangedRes) {
+          return withCors(rangedRes, request, { publicRead: true, cacheStatus: 'HIT' });
+        }
+      }
+      if (route.download) {
+        const dlHeaders = buildMediaResponseHeaders(cachedResponse.headers, payload, isThumbnail, route);
+        const isNullBodyStatus = cachedResponse.status === 204 || cachedResponse.status === 304;
+        return withCors(new Response(isNullBodyStatus ? null : cachedResponse.body, {
+          status: cachedResponse.status,
+          statusText: cachedResponse.statusText,
+          headers: dlHeaders
+        }), request, { publicRead: true, cacheStatus: 'HIT' });
+      }
       return withCors(cachedResponse, request, { publicRead: true, cacheStatus: 'HIT' });
     }
   }
 
   const size = clampImageSize(url.searchParams.get('size'));
   let upstream = null;
+  let imageSource = payload.kind === 'video' ? 'video' : 'original';
 
   if (isPreviewImage) {
-    upstream = await fetchPreviewImage(request, payload, size, env);
-    if (!upstream || isHtmlOrErrorResponse(upstream)) {
+    const useWebp = isThumbnail || forceWebp;
+    upstream = await fetchPreviewImage(request, payload, size, env, { webp: useWebp });
+    if (upstream && !isHtmlOrErrorResponse(upstream)) {
+      imageSource = useWebp ? 'lh3-webp' : 'lh3-jpeg';
+    } else {
       cancelBody(upstream);
       upstream = await fetchDriveBinary(request, payload.fileId, payload.kind, env);
+      imageSource = 'original-fallback';
     }
   } else {
     upstream = await fetchDriveBinary(request, payload.fileId, payload.kind, env);
@@ -119,23 +165,212 @@ async function proxyOpaqueMedia(request, url, route, env, ctx) {
     return withCors(errorRes, request);
   }
 
+  const isNullBodyStatus = upstream.status === 204 || upstream.status === 304;
+  const inlineHeaders = buildMediaResponseHeaders(upstream.headers, payload, isThumbnail, { download: false });
+  inlineHeaders.set('X-Image-Source', imageSource);
+
+  if (route.download) {
+    const dlHeaders = buildMediaResponseHeaders(upstream.headers, payload, isThumbnail, route);
+    dlHeaders.set('X-Image-Source', imageSource);
+
+    if (cache && shouldEdgeCache && ctx && upstream.status === 200 && upstream.body) {
+      const [clientBody, cacheBody] = upstream.body.tee();
+      const cacheEntry = withCors(new Response(cacheBody, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: inlineHeaders
+      }), request, { publicRead: true });
+      ctx.waitUntil(
+        cache.put(cacheKey, cacheEntry).catch(err =>
+          console.warn('[media-proxy] cache.put failed:', err?.message || err)
+        )
+      );
+
+      return withCors(new Response(clientBody, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: dlHeaders
+      }), request, { publicRead: true, cacheStatus: 'MISS' });
+    }
+
+    return withCors(new Response(isNullBodyStatus ? null : upstream.body, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: dlHeaders
+    }), request, { publicRead: true, cacheStatus: 'BYPASS' });
+  }
+
+  const response = withCors(new Response(isNullBodyStatus ? null : upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: inlineHeaders
+  }), request, { publicRead: true, cacheStatus: shouldEdgeCache ? 'MISS' : 'BYPASS' });
+
+  if (cache && shouldEdgeCache && ctx && upstream.status === 200 && request.method === 'GET') {
+    ctx.waitUntil(
+      cache.put(cacheKey, response.clone()).catch(err =>
+        console.warn('[media-proxy] cache.put failed:', err?.message || err)
+      )
+    );
+  } else if (cache && isVideoCacheable && ctx && upstream.status === 206 && request.method === 'GET') {
+    ctx.waitUntil(warmVideoEdgeCache(cache, cacheKey, payload, env, request));
+  }
+
+  return response;
+}
+
+async function warmVideoEdgeCache(cache, cacheKey, payload, env, request) {
+  const lockKey = cacheKey.url;
+  if (warmingVideoKeys.has(lockKey)) return;
+  warmingVideoKeys.add(lockKey);
+  try {
+    const existing = await cache.match(cacheKey);
+    if (existing && !isHtmlOrErrorResponse(existing)) {
+      cancelBody(existing);
+      return;
+    }
+
+    const fullReq = new Request(cacheKey.url, { method: 'GET' });
+    const fullRes = await fetchDriveBinary(fullReq, payload.fileId, payload.kind, env);
+    if (!fullRes || isHtmlOrErrorResponse(fullRes) || fullRes.status !== 200 || !fullRes.body) {
+      cancelBody(fullRes);
+      return;
+    }
+
+    const headers = buildMediaResponseHeaders(fullRes.headers, payload, false, { download: false });
+    headers.set('X-Image-Source', 'video');
+    const cacheEntry = withCors(new Response(fullRes.body, {
+      status: 200,
+      statusText: fullRes.statusText,
+      headers
+    }), request, { publicRead: true });
+    await cache.put(cacheKey, cacheEntry);
+  } catch (err) {
+    console.warn('[media-proxy] warmVideoEdgeCache failed:', err?.message || err);
+  } finally {
+    warmingVideoKeys.delete(lockKey);
+  }
+}
+
+function parseByteRange(rangeHeader, totalLength) {
+  if (!rangeHeader || !Number.isFinite(totalLength) || totalLength <= 0) return null;
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+  if (!match) return null;
+
+  const startStr = match[1];
+  const endStr = match[2];
+  if (!startStr && !endStr) return null;
+
+  let start = 0;
+  let end = totalLength - 1;
+
+  if (!startStr && endStr) {
+    const suffixLen = Number.parseInt(endStr, 10);
+    if (!Number.isFinite(suffixLen) || suffixLen <= 0) return { invalid: true };
+    start = Math.max(0, totalLength - suffixLen);
+  } else {
+    start = Number.parseInt(startStr, 10);
+    if (!Number.isFinite(start) || start < 0 || start >= totalLength) return { invalid: true };
+    if (endStr) {
+      end = Number.parseInt(endStr, 10);
+      if (!Number.isFinite(end) || end < start) return { invalid: true };
+      end = Math.min(end, totalLength - 1);
+    }
+  }
+
+  return { invalid: false, start, end };
+}
+
+async function createRangedMediaResponse(cachedResponse, rangeHeader, payload, isThumbnail) {
+  const totalLength = Number.parseInt(cachedResponse.headers.get('content-length') || '0', 10);
+  if (!Number.isFinite(totalLength) || totalLength <= 0 || !cachedResponse.body) {
+    return null;
+  }
+
+  const parsed = parseByteRange(rangeHeader, totalLength);
+  if (!parsed) return null;
+
+  const headers = buildMediaResponseHeaders(cachedResponse.headers, payload, isThumbnail, { download: false });
+  if (parsed.invalid) {
+    cancelBody(cachedResponse);
+    headers.set('Content-Range', `bytes */${totalLength}`);
+    headers.delete('Content-Length');
+    return new Response(null, { status: 416, statusText: 'Range Not Satisfiable', headers });
+  }
+
+  const { start, end } = parsed;
+  const partLength = end - start + 1;
+  headers.set('Content-Range', `bytes ${start}-${end}/${totalLength}`);
+  headers.set('Content-Length', String(partLength));
+
+  const reader = cachedResponse.body.getReader();
+  let offset = 0;
+  const slicedStream = new ReadableStream({
+    async pull(controller) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.close();
+          return;
+        }
+        const chunkStart = offset;
+        const chunkEnd = offset + value.byteLength - 1;
+        offset += value.byteLength;
+
+        if (chunkEnd < start) {
+          continue;
+        }
+        if (chunkStart > end) {
+          await reader.cancel().catch(() => {});
+          controller.close();
+          return;
+        }
+
+        const sliceStart = Math.max(0, start - chunkStart);
+        const sliceEnd = Math.min(value.byteLength, end - chunkStart + 1);
+        if (sliceEnd > sliceStart) {
+          controller.enqueue(value.subarray(sliceStart, sliceEnd));
+        }
+
+        if (chunkEnd >= end) {
+          await reader.cancel().catch(() => {});
+          controller.close();
+          return;
+        }
+        return;
+      }
+    },
+    async cancel() {
+      await reader.cancel().catch(() => {});
+    }
+  });
+
+  return new Response(slicedStream, {
+    status: 206,
+    statusText: 'Partial Content',
+    headers
+  });
+}
+
+function buildMediaResponseHeaders(sourceHeaders, payload, isThumbnail, route) {
   const headers = new Headers();
-  copyHeader(upstream.headers, headers, 'content-type');
-  copyHeader(upstream.headers, headers, 'content-length');
-  copyHeader(upstream.headers, headers, 'content-range');
-  copyHeader(upstream.headers, headers, 'accept-ranges');
-  copyHeader(upstream.headers, headers, 'etag');
-  copyHeader(upstream.headers, headers, 'last-modified');
+  copyHeader(sourceHeaders, headers, 'content-type');
+  copyHeader(sourceHeaders, headers, 'content-length');
+  copyHeader(sourceHeaders, headers, 'content-range');
+  copyHeader(sourceHeaders, headers, 'accept-ranges');
+  copyHeader(sourceHeaders, headers, 'etag');
+  copyHeader(sourceHeaders, headers, 'last-modified');
+  copyHeader(sourceHeaders, headers, 'x-image-source');
 
   if (payload.kind === 'video' && !isThumbnail) {
-    headers.set('Content-Type', payload.mimeType || upstream.headers.get('content-type') || 'video/mp4');
-    headers.set('Cache-Control', 'public, max-age=3600');
+    headers.set('Content-Type', payload.mimeType || sourceHeaders.get('content-type') || 'video/mp4');
+    headers.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000');
     headers.set('Accept-Ranges', 'bytes');
   } else {
     headers.set('Cache-Control', 'public, max-age=2592000, s-maxage=2592000');
   }
 
-  if (route.download) {
+  if (route?.download) {
     const fileName = safeFileName(payload.name, payload.kind);
     const asciiFileName = fileName.replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
     headers.set('Content-Type', 'application/octet-stream');
@@ -143,22 +378,12 @@ async function proxyOpaqueMedia(request, url, route, env, ctx) {
     headers.set('Cache-Control', 'no-store');
   }
 
-  const isNullBodyStatus = upstream.status === 204 || upstream.status === 304;
-  const response = withCors(new Response(isNullBodyStatus ? null : upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers
-  }), request, { publicRead: true, cacheStatus: shouldEdgeCache ? 'MISS' : 'BYPASS' });
-
-  if (cache && shouldEdgeCache && ctx && upstream.status === 200) {
-    ctx.waitUntil(cache.put(cacheKey, response.clone()));
-  }
-
-  return response;
+  return headers;
 }
 
-async function fetchPreviewImage(request, payload, size, env) {
-  const lh3Url = `https://lh3.googleusercontent.com/d/${encodeURIComponent(payload.fileId)}=s${size}-rw`;
+async function fetchPreviewImage(request, payload, size, _env, options = {}) {
+  const suffix = options.webp ? '-rw' : '';
+  const lh3Url = `https://lh3.googleusercontent.com/d/${encodeURIComponent(payload.fileId)}=s${size}${suffix}`;
   try {
     const res = await fetch(lh3Url, {
       method: request.method,
@@ -170,12 +395,9 @@ async function fetchPreviewImage(request, payload, size, env) {
     }
     cancelBody(res);
   } catch (err) {
-    console.warn('[media-proxy] lh3 preview failed, falling back to Drive API:', err?.message || err);
+    console.warn('[media-proxy] lh3 preview failed, falling back to Drive binary:', err?.message || err);
   }
 
-  if (payload.kind === 'image' && hasGoogleOAuth(env)) {
-    return fetchDriveApiMedia(request, payload.fileId, env);
-  }
   return null;
 }
 
@@ -584,9 +806,9 @@ function isSafeUploadTarget(value) {
 }
 
 function clampImageSize(value) {
-  const size = Number.parseInt(value || '1080', 10);
-  if (!Number.isFinite(size)) return 1080;
-  return Math.min(Math.max(size, 200), 2560);
+  const size = Number.parseInt(value || '1600', 10);
+  if (!Number.isFinite(size)) return 1600;
+  return Math.min(Math.max(size, 200), 4096);
 }
 
 function safeFileName(value, kind) {

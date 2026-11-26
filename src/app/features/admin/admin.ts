@@ -170,6 +170,7 @@ export class Admin implements OnInit, OnDestroy {
   eventSessions = signal<EventSession[]>([]);
   isLoadingEventSessions = signal<boolean>(false);
   filterOnlyConsentedSessions = signal<boolean>(false);
+  private readonly eventSessionsCache = new Map<string, EventSession[]>();
   selectedEventDateFilter = signal<string>('all'); // 'all', 'today', 'yesterday', or 'YYYY-MM-DD'
   customEventDate = '';
 
@@ -935,15 +936,21 @@ export class Admin implements OnInit, OnDestroy {
     }
   }
 
-  async selectEvent(evt: BoothEvent, keepFilter: boolean = false) {
+  async selectEvent(evt: BoothEvent, keepFilter: boolean = false, forceRefresh: boolean = false) {
     this.selectedEvent.set(evt);
-    this.isLoadingEventSessions.set(true);
+    const cacheKey = `${evt.id}::${this.selectedEventMachineId || 'all'}`;
+    const cached = !forceRefresh ? this.eventSessionsCache.get(cacheKey) : undefined;
+
     if (!keepFilter) {
-      this.eventSessions.set([]);
+      this.eventSessions.set(cached || []);
       this.selectedSession.set(null);
       this.selectedEventDateFilter.set('all');
       this.customEventDate = '';
+    } else if (cached && this.eventSessions().length === 0) {
+      this.eventSessions.set(cached);
     }
+
+    this.isLoadingEventSessions.set(!cached);
 
     try {
       const params = new URLSearchParams();
@@ -1003,7 +1010,10 @@ export class Admin implements OnInit, OnDestroy {
             if (timeA !== timeB) return timeB - timeA;
             return (b.id || '').localeCompare(a.id || '');
           });
-          this.eventSessions.set(normalizedSessions);
+          this.eventSessionsCache.set(cacheKey, normalizedSessions);
+          if (this.selectedEvent()?.id === evt.id) {
+            this.eventSessions.set(normalizedSessions);
+          }
         }
       }
     } catch (err: any) {
